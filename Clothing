@@ -62,15 +62,25 @@ def measure_clothes(image, cm_per_pixel):
     # 肩幅（上から10%の位置での幅）
     shoulder_y = y + int(h * 0.1)
     shoulder_line = gray[shoulder_y:shoulder_y+5, x:x+w]
-    shoulder_width = np.max(np.where(shoulder_line < 128)) - np.min(np.where(shoulder_line < 128))
+    shoulder_xs = np.where(shoulder_line < 128)[1]
+    shoulder_width = np.max(shoulder_xs) - np.min(shoulder_xs)
+    left_shoulder = (x + np.min(shoulder_xs), shoulder_y)
+    right_shoulder = (x + np.max(shoulder_xs), shoulder_y)
 
     # 身幅（胸あたり＝上から30%）
     chest_y = y + int(h * 0.3)
     chest_line = gray[chest_y:chest_y+5, x:x+w]
-    chest_width = np.max(np.where(chest_line < 128)) - np.min(np.where(chest_line < 128))
+    chest_xs = np.where(chest_line < 128)[1]
+    chest_width = np.max(chest_xs) - np.min(chest_xs)
 
-    # 袖丈（肩端から袖端まで）
-    sleeve_length = (shoulder_width - chest_width) / 2
+    # 袖端（輪郭の左右端）
+    left_sleeve_end = tuple(clothes_contour[clothes_contour[:, :, 0].argmin()][0])
+    right_sleeve_end = tuple(clothes_contour[clothes_contour[:, :, 0].argmax()][0])
+
+    # 肩端から袖端までの距離
+    left_sleeve_length = np.linalg.norm(np.array(left_shoulder) - np.array(left_sleeve_end))
+    right_sleeve_length = np.linalg.norm(np.array(right_shoulder) - np.array(right_sleeve_end))
+    sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
     # 身丈
     body_length = h
@@ -79,7 +89,9 @@ def measure_clothes(image, cm_per_pixel):
         "肩幅": shoulder_width * cm_per_pixel,
         "身幅": chest_width * cm_per_pixel,
         "身丈": body_length * cm_per_pixel,
-        "袖丈": sleeve_length * cm_per_pixel
+        "袖丈": sleeve_length * cm_per_pixel,
+        "左袖丈": left_sleeve_length * cm_per_pixel,
+        "右袖丈": right_sleeve_length * cm_per_pixel,
     }
     return clothes_contour, measures
 
@@ -123,5 +135,4 @@ cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 # 保存
 cv2.imwrite("clothes_with_measurements.jpg", img_with_text)
 print("寸法入り画像を保存しました → clothes_with_measurements.jpg")
-# calculate_the_clothing
-calculate the clothing
+
