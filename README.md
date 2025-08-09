@@ -15,6 +15,15 @@
 - iPhoneなどのスマートフォン（将来的にはAndroidにも対応予定）
 - opencv-python, pillow-heif, rembg, numpy, Pillow
 
+### 日本語フォントについて
+寸法テキストを日本語で描画するためには日本語に対応したTrueTypeフォントが必要です。
+環境にフォントがインストールされていない場合は、以下のように環境変数 `JP_FONT_PATH`
+でフォントファイルのパスを指定してください。
+
+```bash
+export JP_FONT_PATH=/path/to/your/NotoSansJP-Regular.otf
+```
+
 ## インストール方法
 1. リポジトリをクローンします。
    ```bash
