@@ -57,11 +57,23 @@ def measure_clothes(image, cm_per_pixel):
         return None, {}
 
     clothes_contour = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(clothes_contour)
+
+    # 最上点・最下点を取得
+    ys = clothes_contour[:, :, 1]
+    xs = clothes_contour[:, :, 0]
+    topmost = tuple(clothes_contour[ys.argmin()][0])
+    bottommost = tuple(clothes_contour[ys.argmax()][0])
+
+    min_x = int(xs.min())
+    max_x = int(xs.max())
+    min_y = int(ys.min())
+    max_y = int(ys.max())
+    w = max_x - min_x + 1
+    height = bottommost[1] - topmost[1]
 
     # 肩幅（上から10%の位置での幅）
-    shoulder_y = y + int(h * 0.1)
-    shoulder_line = gray[shoulder_y:shoulder_y+5, x:x+w]
+    shoulder_y = min_y + int(height * 0.1)
+    shoulder_line = gray[shoulder_y:shoulder_y+5, min_x:min_x+w]
     shoulder_points = cv2.findNonZero(shoulder_line)
     if shoulder_points is None:
         raise ValueError("Shoulder line not detected")
@@ -69,19 +81,19 @@ def measure_clothes(image, cm_per_pixel):
     shoulder_ys = shoulder_points[:, 0, 1]
     left_idx = np.argmin(shoulder_xs)
     right_idx = np.argmax(shoulder_xs)
-    left_shoulder = (x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
-    right_shoulder = (x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
+    left_shoulder = (min_x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
+    right_shoulder = (min_x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
     # 身幅（胸あたり＝上から30%）
-    chest_y = y + int(h * 0.3)
-    chest_line = gray[chest_y:chest_y+5, x:x+w]
+    chest_y = min_y + int(height * 0.3)
+    chest_line = gray[chest_y:chest_y+5, min_x:min_x+w]
     chest_points = cv2.findNonZero(chest_line)
     if chest_points is None:
         raise ValueError("Chest line not detected")
     chest_xs = chest_points[:, 0, 0]
-    left_chest = x + chest_xs.min()
-    right_chest = x + chest_xs.max()
+    left_chest = min_x + chest_xs.min()
+    right_chest = min_x + chest_xs.max()
     chest_width = right_chest - left_chest
 
     # 袖端（輪郭の左右端）
@@ -93,8 +105,8 @@ def measure_clothes(image, cm_per_pixel):
     right_sleeve_length = np.linalg.norm(np.array(right_shoulder) - np.array(right_sleeve_end))
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
-    # 身丈
-    body_length = h
+    # 身丈（最上点と最下点の距離）
+    body_length = bottommost[1] - topmost[1]
 
     measures = {
         "肩幅": shoulder_width * cm_per_pixel,
