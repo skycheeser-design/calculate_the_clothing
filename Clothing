@@ -51,13 +51,18 @@ def remove_background(image):
 def measure_clothes(image, cm_per_pixel):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+    # ノイズ除去のためのクロージング処理
+    kernel = np.ones((5, 5), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if not contours:
         return None, {}
 
     clothes_contour = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(clothes_contour)
+    # 凸包で輪郭を滑らかにする
+    hull = cv2.convexHull(clothes_contour)
+    x, y, w, h = cv2.boundingRect(hull)
 
     # 肩幅（上から10%の位置での幅）
     shoulder_y = y + int(h * 0.1)
@@ -84,17 +89,19 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖端（輪郭の左右端）
-    left_sleeve_end = tuple(clothes_contour[clothes_contour[:, :, 0].argmin()][0])
-    right_sleeve_end = tuple(clothes_contour[clothes_contour[:, :, 0].argmax()][0])
+    # 袖端（凸包の左右端）
+    left_sleeve_end = tuple(hull[hull[:, :, 0].argmin()][0])
+    right_sleeve_end = tuple(hull[hull[:, :, 0].argmax()][0])
 
     # 肩端から袖端までの距離
     left_sleeve_length = np.linalg.norm(np.array(left_shoulder) - np.array(left_sleeve_end))
     right_sleeve_length = np.linalg.norm(np.array(right_shoulder) - np.array(right_sleeve_end))
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
-    # 身丈
-    body_length = h
+    # 身丈（凸包の上下端）
+    top_point = hull[hull[:, :, 1].argmin()][0]
+    bottom_point = hull[hull[:, :, 1].argmax()][0]
+    body_length = bottom_point[1] - top_point[1]
 
     measures = {
         "肩幅": shoulder_width * cm_per_pixel,
@@ -104,7 +111,7 @@ def measure_clothes(image, cm_per_pixel):
         "左袖丈": left_sleeve_length * cm_per_pixel,
         "右袖丈": right_sleeve_length * cm_per_pixel,
     }
-    return clothes_contour, measures
+    return hull, measures
 
 # 画像に寸法描画
 def draw_measurements_on_image(image, measurements):
