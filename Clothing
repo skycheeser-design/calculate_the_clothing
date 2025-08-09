@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import pillow_heif
 import os
 from rembg import remove
@@ -134,15 +134,40 @@ def measure_clothes(image, cm_per_pixel):
     return hull, measures
 
 # 画像に寸法描画
-def draw_measurements_on_image(image, measurements):
-    font = cv2.FONT_HERSHEY_SIMPLEX
+def draw_measurements_on_image(image, measurements, font_path=None):
+    """Draw measurement text on an image using a font that supports Japanese.
+
+    Parameters
+    ----------
+    image : numpy.ndarray
+        BGR image as used by OpenCV.
+    measurements : dict
+        Dictionary mapping measurement names to values.
+    font_path : str, optional
+        Path to a TrueType font capable of rendering Japanese. If not
+        provided, the path is taken from the ``JP_FONT_PATH`` environment
+        variable. When no font can be loaded, Pillow's default font is used,
+        though it may not support Japanese characters.
+    """
+
+    if font_path is None:
+        font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc")
+
+    try:
+        font = ImageFont.truetype(font_path, size=32)
+    except OSError:
+        font = ImageFont.load_default()
+
+    pil_img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+
     y_offset = 30
     for key, value in measurements.items():
         text = f"{key}: {value:.1f} cm"
-        cv2.putText(image, text, (30, y_offset),
-                    font, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        draw.text((30, y_offset), text, font=font, fill=(0, 255, 0))
         y_offset += 40
-    return image
+
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 # ===== メイン処理 =====
 image_path = "画像.jpg"  # HEICもJPEGもOK
@@ -171,7 +196,8 @@ if contour is None:
 for k, v in measurements.items():
     print(f"{k}: {v:.1f} cm")
 
-img_with_text = draw_measurements_on_image(img.copy(), measurements)
+font_path = os.getenv("JP_FONT_PATH")
+img_with_text = draw_measurements_on_image(img.copy(), measurements, font_path=font_path)
 cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 
 # 保存
