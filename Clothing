@@ -101,8 +101,6 @@ def measure_clothes(image, cm_per_pixel):
         "身幅": chest_width * cm_per_pixel,
         "身丈": body_length * cm_per_pixel,
         "袖丈": sleeve_length * cm_per_pixel,
-        "左袖丈": left_sleeve_length * cm_per_pixel,
-        "右袖丈": right_sleeve_length * cm_per_pixel,
     }
     return clothes_contour, measures
 
