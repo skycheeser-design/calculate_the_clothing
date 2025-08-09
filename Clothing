@@ -62,16 +62,12 @@ def measure_clothes(image, cm_per_pixel):
     # 肩幅（上から10%の位置での幅）
     shoulder_y = y + int(h * 0.1)
     shoulder_line = gray[shoulder_y:shoulder_y+5, x:x+w]
-    shoulder_xs = np.where(shoulder_line < 128)[1]
-    shoulder_width = np.max(shoulder_xs) - np.min(shoulder_xs)
-    left_shoulder = (x + np.min(shoulder_xs), shoulder_y)
-    right_shoulder = (x + np.max(shoulder_xs), shoulder_y)
+
 
     # 身幅（胸あたり＝上から30%）
     chest_y = y + int(h * 0.3)
     chest_line = gray[chest_y:chest_y+5, x:x+w]
-    chest_xs = np.where(chest_line < 128)[1]
-    chest_width = np.max(chest_xs) - np.min(chest_xs)
+
 
     # 袖端（輪郭の左右端）
     left_sleeve_end = tuple(clothes_contour[clothes_contour[:, :, 0].argmin()][0])
@@ -120,7 +116,11 @@ if cm_per_pixel is None:
 img_no_bg = remove_background(img)
 
 # 服計測
-contour, measurements = measure_clothes(img_no_bg, cm_per_pixel)
+try:
+    contour, measurements = measure_clothes(img_no_bg, cm_per_pixel)
+except ValueError as e:
+    print(f"計測エラー: {e}")
+    exit()
 if contour is None:
     print("服が検出できません。")
     exit()
