@@ -93,9 +93,11 @@ def measure_clothes(image, cm_per_pixel):
     right_shoulder = (min_x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
-    # 身幅（胸あたり＝上から30%）
-    chest_y = min_y + int(height * 0.3)
-    chest_line = gray[chest_y:chest_y+5, min_x:min_x+w]
+
+    # 身幅（下から30%）
+    chest_y = y + int(h * 0.7)
+    chest_line = gray[chest_y:chest_y+5, x:x+w]
+
     chest_points = cv2.findNonZero(chest_line)
     if chest_points is None:
         raise ValueError("Chest line not detected")
