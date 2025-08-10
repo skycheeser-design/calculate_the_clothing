@@ -1,10 +1,12 @@
 import os
 import importlib.util
+from pathlib import Path
 import numpy as np
 import cv2
 
 # Load Clothing module from script
-MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
+base = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+MODULE_PATH = base / '..' / 'Clothing'
 spec = importlib.util.spec_from_file_location('clothing', MODULE_PATH)
 clothing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(clothing)
