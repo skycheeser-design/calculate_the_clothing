@@ -134,7 +134,7 @@ def measure_clothes(image, cm_per_pixel):
     return hull, measures
 
 # 画像に寸法描画
-def draw_measurements_on_image(image, measurements, font_path=None):
+def draw_measurements_on_image(image, measurements, font_path=None, font_size=150):
     """Draw measurement labels on an image using a Japanese-capable font.
 
     The overlay text defaults to a large 150 px font so measurements remain
@@ -153,13 +153,15 @@ def draw_measurements_on_image(image, measurements, font_path=None):
         provided, the path is taken from the ``JP_FONT_PATH`` environment
         variable. When no font can be loaded, Pillow's default font is used,
         though it may not support Japanese characters.
+    font_size : int, optional
+        Base font size to use for rendering measurement labels. Defaults to
+        150 px and is also used to derive line spacing.
     """
 
     if font_path is None:
         font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc")
 
     # Use a large font size so that text is clearly legible on high-resolution images
-    font_size = 150
     try:
 
         font = ImageFont.truetype(font_path, size=font_size)
@@ -212,7 +214,9 @@ if __name__ == "__main__":
         print(f"{k}: {v:.1f} cm")
 
     font_path = os.getenv("JP_FONT_PATH")
-    img_with_text = draw_measurements_on_image(img.copy(), measurements, font_path=font_path)
+    img_with_text = draw_measurements_on_image(
+        img.copy(), measurements, font_path=font_path, font_size=200
+    )
     cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 
     # 保存
