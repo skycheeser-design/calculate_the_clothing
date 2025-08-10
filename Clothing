@@ -135,7 +135,12 @@ def measure_clothes(image, cm_per_pixel):
 
 # 画像に寸法描画
 def draw_measurements_on_image(image, measurements, font_path=None):
-    """Draw measurement text on an image using a font that supports Japanese.
+    """Draw measurement labels on an image using a Japanese-capable font.
+
+    The overlay text defaults to a large 150 px font so measurements remain
+    clearly visible on high-resolution images. When a custom font cannot be
+    loaded and Pillow's built-in fallback is used instead, the size is reduced
+    to 20 px to match that font's limited metrics.
 
     Parameters
     ----------
@@ -153,54 +158,60 @@ def draw_measurements_on_image(image, measurements, font_path=None):
     if font_path is None:
         font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc")
 
+    # Use a large font size so that text is clearly legible on high-resolution images
+    font_size = 150
     try:
-        font = ImageFont.truetype(font_path, size=32)
+        font = ImageFont.truetype(font_path, size=font_size)
     except OSError:
         font = ImageFont.load_default()
+        # fall back to a conservative spacing when the default font is used
+        font_size = 20
 
     pil_img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_img)
 
     y_offset = 30
+    line_height = font_size + 20
     for key, value in measurements.items():
         text = f"{key}: {value:.1f} cm"
         draw.text((30, y_offset), text, font=font, fill=(0, 255, 0))
-        y_offset += 40
+        y_offset += line_height
 
     return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
-# ===== メイン処理 =====
-image_path = "画像.jpg"  # HEICもJPEGもOK
-img = load_image(image_path)
+if __name__ == "__main__":
+    # ===== メイン処理 =====
+    image_path = "画像.jpg"  # HEICもJPEGもOK
+    img = load_image(image_path)
 
-# マーカー検出（背景除去前）
-cm_per_pixel = detect_marker(img)
-if cm_per_pixel is None:
-    print("マーカーが検出できません。終了します。")
-    exit()
+    # マーカー検出（背景除去前）
+    cm_per_pixel = detect_marker(img)
+    if cm_per_pixel is None:
+        print("マーカーが検出できません。終了します。")
+        exit()
 
-# 背景除去
-img_no_bg = remove_background(img)
+    # 背景除去
+    img_no_bg = remove_background(img)
 
-# 服計測
-try:
-    contour, measurements = measure_clothes(img_no_bg, cm_per_pixel)
-except ValueError as e:
-    print(f"計測エラー: {e}")
-    exit()
-if contour is None:
-    print("服が検出できません。")
-    exit()
+    # 服計測
+    try:
+        contour, measurements = measure_clothes(img_no_bg, cm_per_pixel)
+    except ValueError as e:
+        print(f"計測エラー: {e}")
+        exit()
+    if contour is None:
+        print("服が検出できません。")
+        exit()
 
-# 寸法表示
-for k, v in measurements.items():
-    print(f"{k}: {v:.1f} cm")
+    # 寸法表示
+    for k, v in measurements.items():
+        print(f"{k}: {v:.1f} cm")
 
-font_path = os.getenv("JP_FONT_PATH")
-img_with_text = draw_measurements_on_image(img.copy(), measurements, font_path=font_path)
-cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
+    font_path = os.getenv("JP_FONT_PATH")
+    img_with_text = draw_measurements_on_image(img.copy(), measurements, font_path=font_path)
+    cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 
-# 保存
-cv2.imwrite("clothes_with_measurements.jpg", img_with_text)
-print("寸法入り画像を保存しました → clothes_with_measurements.jpg")
+    # 保存
+    cv2.imwrite("clothes_with_measurements.jpg", img_with_text)
+    print("寸法入り画像を保存しました → clothes_with_measurements.jpg")
 
