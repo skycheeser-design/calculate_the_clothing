@@ -154,18 +154,18 @@ def draw_measurements_on_image(image, measurements, font_path=None):
         font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc")
 
     try:
-        font = ImageFont.truetype(font_path, size=32)
+        font = ImageFont.truetype(font_path, size=50)
     except OSError:
         font = ImageFont.load_default()
 
     pil_img = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_img)
 
-    y_offset = 30
+    y_offset = 60
     for key, value in measurements.items():
         text = f"{key}: {value:.1f} cm"
         draw.text((30, y_offset), text, font=font, fill=(0, 255, 0))
-        y_offset += 40
+        y_offset += 60
 
     return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
