@@ -115,21 +115,6 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖端（肩点から最も遠い輪郭点）
-    contour_points = clothes_contour[:, 0, :]
-
-    # 胴体の中央を境に輪郭点を左右に分割
-    left_mask = contour_points[:, 0] <= center_x
-    left_points = contour_points[left_mask]
-    right_points = contour_points[~left_mask]
-    if left_points.size == 0 or right_points.size == 0:
-        raise ValueError("Sleeve contour not detected")
-
-    def _furthest_point(points: np.ndarray, shoulder: np.ndarray):
-        """Return the contour point farthest from the given shoulder."""
-        dists = np.linalg.norm(points - shoulder, axis=1)
-        idx = int(np.argmax(dists))
-        return tuple(points[idx]), dists[idx]
 
     left_sleeve_end, left_sleeve_length = _furthest_point(
         left_points, np.array(left_shoulder, dtype=np.float64)
