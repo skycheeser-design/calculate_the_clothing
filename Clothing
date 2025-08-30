@@ -123,13 +123,30 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = min_x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖端（肩点から最も遠い輪郭点）
-    contour_points = clothes_contour[:, 0, :]
-    left_points = contour_points[contour_points[:, 0] <= center_x]
-    right_points = contour_points[contour_points[:, 0] > center_x]
-    if left_points.size == 0 or right_points.size == 0:
+    # 袖領域抽出（中央線で左右に分割し連結成分解析）
+    left_mask = np.zeros_like(mask)
+    left_mask[:, :center_x] = mask[:, :center_x]
+    right_mask = np.zeros_like(mask)
+    right_mask[:, center_x:] = mask[:, center_x:]
+
+    _, left_labels = cv2.connectedComponents(left_mask)
+    _, right_labels = cv2.connectedComponents(right_mask)
+
+    left_label = left_labels[left_shoulder[1], left_shoulder[0]]
+    right_label = right_labels[right_shoulder[1], right_shoulder[0]]
+
+    left_region = np.uint8(left_labels == left_label)
+    right_region = np.uint8(right_labels == right_label)
+
+    left_contours, _ = cv2.findContours(left_region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    right_contours, _ = cv2.findContours(right_region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not left_contours or not right_contours:
         raise ValueError("Sleeve contour not detected")
 
+    left_points = left_contours[0][:, 0, :]
+    right_points = right_contours[0][:, 0, :]
+
+    # 肩点から最も遠い輪郭点（袖口端）
     left_dists = np.linalg.norm(left_points - np.array(left_shoulder), axis=1)
     right_dists = np.linalg.norm(right_points - np.array(right_shoulder), axis=1)
     left_sleeve_end = tuple(left_points[np.argmax(left_dists)])
