@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
+from heapq import heappush, heappop
+from skimage.morphology import skeletonize
 try:
     import pillow_heif
 except ImportError:  # pragma: no cover
@@ -56,6 +58,56 @@ def remove_background(image):
         raise ImportError("rembg is required for background removal")
     result = remove(image)
     return cv2.cvtColor(np.array(result), cv2.COLOR_RGBA2BGR)
+
+
+def _nearest_skeleton_point(skeleton, point):
+    """Return the skeleton pixel closest to ``point``.
+
+    Parameters
+    ----------
+    skeleton : ndarray
+        Binary skeleton image.
+    point : tuple
+        ``(x, y)`` coordinate.
+    """
+    ys, xs = np.nonzero(skeleton)
+    if xs.size == 0:
+        raise ValueError("Skeleton is empty")
+    dists = (xs - point[0]) ** 2 + (ys - point[1]) ** 2
+    idx = np.argmin(dists)
+    return int(xs[idx]), int(ys[idx])
+
+
+def _shortest_path_length(skeleton, start, end):
+    """Compute shortest path length between two points on a skeleton."""
+    height, width = skeleton.shape
+    visited = np.zeros((height, width), dtype=bool)
+    dist = np.full((height, width), np.inf)
+    sx, sy = start
+    ex, ey = end
+    dist[sy, sx] = 0.0
+    heap = [(0.0, sx, sy)]
+    neighbors = [
+        (-1, -1), (0, -1), (1, -1),
+        (-1, 0),           (1, 0),
+        (-1, 1),  (0, 1),  (1, 1),
+    ]
+    while heap:
+        d, x, y = heappop(heap)
+        if visited[y, x]:
+            continue
+        if (x, y) == (ex, ey):
+            return d
+        visited[y, x] = True
+        for dx, dy in neighbors:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
+                step = 1.41421356 if dx != 0 and dy != 0 else 1.0
+                nd = d + step
+                if nd < dist[ny, nx]:
+                    dist[ny, nx] = nd
+                    heappush(heap, (nd, nx, ny))
+    return np.inf
 
 # 服計測
 def measure_clothes(image, cm_per_pixel):
@@ -114,6 +166,7 @@ def measure_clothes(image, cm_per_pixel):
     left_chest = x + chest_xs.min()
     right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
+
 
 
 
