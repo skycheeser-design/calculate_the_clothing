@@ -17,7 +17,7 @@ def test_draw_measurements_with_japanese_font():
     measures = {"肩幅": 50.0}
     font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     out = clothing.draw_measurements_on_image(
-        img.copy(), measures, font_path=font_path, font_size=20
+        img.copy(), measures, font_path=font_path
     )
     # Ensure drawing modified the image
     assert np.any(out != img)
