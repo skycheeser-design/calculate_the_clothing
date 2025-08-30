@@ -1,10 +1,10 @@
+import importlib
 import importlib.util
 import os
-from pathlib import Path
 
 import pytest
 
-# Skip this test if required dependencies for importing Clothing are missing
+# Skip if optional dependencies are missing
 required_modules = ["numpy", "cv2", "PIL", "pillow_heif", "rembg"]
 for mod in required_modules:
     if importlib.util.find_spec(mod) is None:
@@ -15,9 +15,9 @@ def test_import_has_no_side_effect(tmp_path):
     output = tmp_path / "clothes_with_measurements.jpg"
     assert not output.exists()
 
-    module_path = Path(__file__).resolve().parent.parent / "Clothing"
-    spec = importlib.util.spec_from_file_location("clothing", module_path)
-    clothing = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(clothing)
+    import clothing.io  # noqa: F401
+    import clothing.background  # noqa: F401
+    import clothing.measure  # noqa: F401
+    import clothing.viz  # noqa: F401
 
     assert not output.exists()

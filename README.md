@@ -39,18 +39,28 @@ export JP_FONT_PATH=/path/to/your/NotoSansJP-Regular.otf
 
 ## 使い方
 1. 服をスマホで撮影し、画像ファイルを用意します。
-2. スクリプトを実行します。
+2. パイプライン用の CLI を実行します。
    ```bash
-   python Clothing
+   python cli.py path/to/image.jpg \
+       --cache-dir cache \
+       --skip-background --skip-measure --skip-viz \
+       --font-path /path/to/your/font.ttf
    ```
-3. カテゴリを選択すると、画像と寸法テキストが `results/<カテゴリ名>/` 以下に保存されます。
+   `--skip-background` や `--skip-measure`、`--skip-viz` などのフラグを付けることで、
+   キャッシュ済みの処理をスキップできます。`--font-path` で日本語フォントを指定できます。
+3. `cache/` ディレクトリに背景除去後の画像や計測結果が保存され、
+   標準出力にも寸法値が表示されます。
 
-## プロジェクト構成（例）
+## モジュール構成
 ```
 calculate_the_clothing/
-├── Clothing        # 服の寸法を計測するPythonスクリプト
-├── README.md       # このファイル
-└── results/        # 計測結果が保存されるディレクトリ（実行後に生成）
+├── cli.py                # パイプライン制御用 CLI (メインモジュール)
+├── clothing/
+│   ├── io.py             # 画像読み込みと HEIC 対応
+│   ├── background.py     # マーカ検出と背景除去
+│   ├── measure.py        # マスク・スケルトンによる寸法計測
+│   └── viz.py            # フォント読み込みと寸法描画
+└── tests/                # 単体テスト
 ```
 
 ## ライセンス情報
