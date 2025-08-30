@@ -199,16 +199,37 @@ def measure_clothes(image, cm_per_pixel):
     right_shoulder = (x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
-    # 身幅（下から30%）
-    chest_y = top_y + int(height * 0.7)
-    chest_line = mask[chest_y:chest_y + 5, x:x + w]
 
-    chest_points = cv2.findNonZero(chest_line)
-    if chest_points is None:
+
+    # 身幅：胴体の25%〜50%の範囲を探索し、最大幅を採用
+    kernel_size = max(3, height // 10)
+    vertical_kernel = np.ones((kernel_size, 1), np.uint8)
+    torso_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, vertical_kernel)
+    torso_mask = cv2.morphologyEx(torso_mask, cv2.MORPH_CLOSE, vertical_kernel)
+
+    max_width = 0
+    left_chest = right_chest = None
+    center_rel = center_x - x
+    start_y = int(top_y + height * 0.25)
+    end_y = int(top_y + height * 0.5)
+
+    for y_pos in range(start_y, end_y):
+        row = torso_mask[y_pos, x:x + w]
+        xs = np.where(row > 0)[0]
+        if xs.size == 0:
+            continue
+        segments = np.split(xs, np.where(np.diff(xs) > 1)[0] + 1)
+        for seg in segments:
+            if seg[0] <= center_rel <= seg[-1]:
+                width = seg[-1] - seg[0]
+                if width > max_width:
+                    max_width = width
+                    left_chest = x + seg[0]
+                    right_chest = x + seg[-1]
+                break
+
+    if max_width == 0:
         raise ValueError("Chest line not detected")
-    chest_xs = chest_points[:, 0, 0]
-    left_chest = x + chest_xs.min()
-    right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
     skeleton = skeletonize(mask > 0)
