@@ -22,16 +22,7 @@ def create_test_image():
 
 
 def create_long_sleeve_image():
-    """Create a long-sleeve test image."""
-    img = np.zeros((200, 200, 3), dtype=np.uint8)
-    cv2.rectangle(img, (80, 50), (120, 180), (255, 255, 255), -1)
-    # long, thin sleeves extending horizontally
-    cv2.rectangle(img, (20, 60), (80, 66), (255, 255, 255), -1)
-    cv2.rectangle(img, (120, 60), (180, 66), (255, 255, 255), -1)
-    return img
 
-
-def test_measure_clothes_lengths_short():
     img = create_test_image()
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
@@ -45,4 +36,13 @@ def test_measure_clothes_lengths_long():
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
     expected_sleeve = 80 - 20  # horizontal length along skeleton
+    assert abs(measures['袖丈'] - expected_sleeve) < 1.0
+
+
+def test_measure_clothes_long_sleeve_length():
+    img = create_long_sleeve_image()
+    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    assert contour is not None
+    # Expected sleeve length from shoulder (80,66) to sleeve end (60,240)
+    expected_sleeve = np.hypot(80 - 60, 66 - 240)
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
