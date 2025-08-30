@@ -274,14 +274,13 @@ def _load_japanese_font(font_path, font_size):
     # Fall back to Pillow's default font which may not support Japanese
     return ImageFont.load_default(), 20
 
-# 画像に寸法描画
-def draw_measurements_on_image(image, measurements, font_path=None, font_size=150):
+def draw_measurements_on_image(image, measurements, font_path=None, font_size=None):
     """Draw measurement labels on an image using a Japanese-capable font.
 
-    The overlay text defaults to a large 150 px font so measurements remain
-    clearly visible on high-resolution images. When a custom font cannot be
-    loaded and Pillow's built-in fallback is used instead, the size is reduced
-    to 20 px to match that font's limited metrics.
+    When ``font_size`` is omitted the size is derived from the input image so
+    text remains legible regardless of resolution. If a custom font cannot be
+    loaded and Pillow's built‑in fallback is used instead, the returned size may
+    differ from the requested value.
 
     Parameters
     ----------
@@ -298,9 +297,14 @@ def draw_measurements_on_image(image, measurements, font_path=None, font_size=15
            macOS)
         3. Pillow's bundled bitmap font, which may lack Japanese glyphs
     font_size : int, optional
-        Base font size to use for rendering measurement labels. Defaults to
-        150 px and is also used to derive line spacing.
+        Base font size for rendering measurement labels. If ``None``, a size is
+        computed from the image dimensions using ``max(20, min(image.shape[:2])
+        // 25)``. The final size returned by the font loader is also used to
+        determine line spacing.
     """
+
+    if font_size is None:
+        font_size = max(20, min(image.shape[:2]) // 25)
 
     # Resolve a Japanese-capable font. When no suitable font can be found,
     # Pillow's default bitmap font is used and the size is reduced for better
@@ -312,7 +316,7 @@ def draw_measurements_on_image(image, measurements, font_path=None, font_size=15
 
 
     y_offset = 30
-    line_height = font_size + 20
+    line_height = int(font_size * 1.2)
     for key, value in measurements.items():
         text = f"{key}: {value:.1f} cm"
         draw.text((30, y_offset), text, font=font, fill=(0, 255, 0))
@@ -354,7 +358,7 @@ if __name__ == "__main__":
 
     font_path = os.getenv("JP_FONT_PATH")
     img_with_text = draw_measurements_on_image(
-        img.copy(), measurements, font_path=font_path, font_size=200
+        img.copy(), measurements, font_path=font_path
     )
     cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 
