@@ -2,6 +2,7 @@ import os
 import importlib.util
 import numpy as np
 import cv2
+from sleeve import compute_sleeve_length
 
 # Load Clothing module from the script without extension
 MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
@@ -47,3 +48,18 @@ def test_measure_clothes_long_sleeve_length():
     # Expected sleeve length from shoulder (80,66) to sleeve end (60,240)
     expected_sleeve = np.hypot(80 - 60, 66 - 240)
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
+
+
+def test_compute_sleeve_length_disconnected_branch():
+    left_points = np.array([[0, y] for y in range(5)], dtype=int)
+    right_line = [[50, y] for y in range(5)]
+    right_square = [[10, 10], [10, 11], [11, 10], [11, 11]]
+    right_points = np.array(right_line + right_square, dtype=int)
+    left_shoulder = (0, 0)
+    right_shoulder = (10, 10)
+    left_end, right_end, sleeve_length = compute_sleeve_length(
+        left_points, right_points, left_shoulder, right_shoulder
+    )
+    assert np.isfinite(sleeve_length)
+    assert right_end == right_shoulder
+    assert np.isclose(sleeve_length, 2.0)
