@@ -109,6 +109,50 @@ def _shortest_path_length(skeleton, start, end):
                     heappush(heap, (nd, nx, ny))
     return np.inf
 
+
+def _furthest_point(points, start):
+    """Return the furthest point from ``start`` along a skeleton.
+
+    The function reconstructs a binary skeleton image from ``points`` and then
+    measures the shortest-path distance from ``start`` to every point using
+    :func:`_shortest_path_length`. The point with the greatest path length and
+    that distance are returned.
+
+    Parameters
+    ----------
+    points : ndarray
+        ``(N, 2)`` array of ``(x, y)`` coordinates describing the skeleton.
+    start : array-like
+        Starting ``(x, y)`` coordinate.
+
+    Returns
+    -------
+    tuple
+        ``(furthest_point, distance)`` where ``furthest_point`` is the
+        ``(x, y)`` coordinate farthest from ``start`` and ``distance`` is the
+        shortest-path length to that point.
+    """
+
+    if points.size == 0:
+        start = (int(start[0]), int(start[1]))
+        return start, 0.0
+
+    max_x = int(max(points[:, 0].max(), start[0])) + 1
+    max_y = int(max(points[:, 1].max(), start[1])) + 1
+    skeleton = np.zeros((max_y, max_x), dtype=bool)
+    skeleton[points[:, 1], points[:, 0]] = True
+
+    sx, sy = _nearest_skeleton_point(skeleton, (int(start[0]), int(start[1])))
+
+    furthest = (sx, sy)
+    max_dist = 0.0
+    for x, y in points:
+        length = _shortest_path_length(skeleton, (sx, sy), (int(x), int(y)))
+        if length > max_dist:
+            max_dist = length
+            furthest = (int(x), int(y))
+    return furthest, float(max_dist)
+
 # 服計測
 def measure_clothes(image, cm_per_pixel):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -167,8 +211,14 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
+    skeleton = skeletonize(mask > 0)
+    points = np.column_stack(np.nonzero(skeleton)[::-1])
+    left_points = points[points[:, 0] < center_x]
+    right_points = points[points[:, 0] >= center_x]
 
-
+    body_length = _shortest_path_length(
+        skeleton, (center_x, top_y), (center_x, bottom_y)
+    )
 
     left_sleeve_end, left_sleeve_length = _furthest_point(
         left_points, np.array(left_shoulder, dtype=np.float64)
@@ -179,8 +229,6 @@ def measure_clothes(image, cm_per_pixel):
 
     # 肩端から袖端までの距離（左右の平均）
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
-
-
 
     measures = {
         "肩幅": shoulder_width * cm_per_pixel,
