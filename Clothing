@@ -66,18 +66,25 @@ def measure_clothes(image, cm_per_pixel):
     x, y, w, h = cv2.boundingRect(hull)
 
 
-    # 最上点・最下点を取得
+    # 二値マスクから胴体中央線を推定
+    mask = np.zeros_like(gray)
+    cv2.drawContours(mask, [clothes_contour], -1, 255, thickness=-1)
+    projection = mask.sum(axis=0)
+    center_x = int(np.argmax(projection))
+    column_pixels = np.where(mask[:, center_x] > 0)[0]
+    if column_pixels.size == 0:
+        raise ValueError("Center line not found")
+    top_y = int(column_pixels.min())
+    bottom_y = int(column_pixels.max())
+
     ys = clothes_contour[:, :, 1]
     xs = clothes_contour[:, :, 0]
-    topmost = tuple(clothes_contour[ys.argmin()][0])
-    bottommost = tuple(clothes_contour[ys.argmax()][0])
-
     min_x = int(xs.min())
     max_x = int(xs.max())
     min_y = int(ys.min())
     max_y = int(ys.max())
     w = max_x - min_x + 1
-    height = bottommost[1] - topmost[1]
+    height = bottom_y - top_y
 
     # 肩幅（上から10%の位置での幅）
     shoulder_y = min_y + int(height * 0.1)
@@ -116,13 +123,8 @@ def measure_clothes(image, cm_per_pixel):
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
 
-    # 身丈（凸包の上下端）
-    top_point = hull[hull[:, :, 1].argmin()][0]
-    bottom_point = hull[hull[:, :, 1].argmax()][0]
-    body_length = bottom_point[1] - top_point[1]
-
-    # 身丈（最上点と最下点の距離）
-    body_length = bottommost[1] - topmost[1]
+    # 身丈（中央線と輪郭の交点間の距離）
+    body_length = bottom_y - top_y
 
 
     measures = {
