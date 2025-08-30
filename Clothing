@@ -87,18 +87,11 @@ def measure_clothes(image, cm_per_pixel):
     top_y = int(column_pixels.min())
     bottom_y = int(column_pixels.max())
 
-    ys = clothes_contour[:, :, 1]
-    xs = clothes_contour[:, :, 0]
-    min_x = int(xs.min())
-    max_x = int(xs.max())
-    min_y = int(ys.min())
-    max_y = int(ys.max())
-    w = max_x - min_x + 1
     height = bottom_y - top_y
 
     # 肩幅（上から10%の位置での幅）
-    shoulder_y = min_y + int(height * 0.1)
-    shoulder_line = gray[shoulder_y:shoulder_y+5, min_x:min_x+w]
+    shoulder_y = top_y + int(height * 0.1)
+    shoulder_line = mask[shoulder_y:shoulder_y + 5, x:x + w]
     shoulder_points = cv2.findNonZero(shoulder_line)
     if shoulder_points is None:
         raise ValueError("Shoulder line not detected")
@@ -106,21 +99,20 @@ def measure_clothes(image, cm_per_pixel):
     shoulder_ys = shoulder_points[:, 0, 1]
     left_idx = np.argmin(shoulder_xs)
     right_idx = np.argmax(shoulder_xs)
-    left_shoulder = (min_x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
-    right_shoulder = (min_x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
+    left_shoulder = (x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
+    right_shoulder = (x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
-
     # 身幅（下から30%）
-    chest_y = y + int(h * 0.7)
-    chest_line = gray[chest_y:chest_y+5, x:x+w]
+    chest_y = top_y + int(height * 0.7)
+    chest_line = mask[chest_y:chest_y + 5, x:x + w]
 
     chest_points = cv2.findNonZero(chest_line)
     if chest_points is None:
         raise ValueError("Chest line not detected")
     chest_xs = chest_points[:, 0, 0]
-    left_chest = min_x + chest_xs.min()
-    right_chest = min_x + chest_xs.max()
+    left_chest = x + chest_xs.min()
+    right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
     # 袖端（肩点から最も遠い輪郭点）
@@ -140,9 +132,6 @@ def measure_clothes(image, cm_per_pixel):
     right_sleeve_length = right_dists.max()
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
-
-    # 身丈（中央線と輪郭の交点間の距離）
-    body_length = bottom_y - top_y
 
 
     measures = {
