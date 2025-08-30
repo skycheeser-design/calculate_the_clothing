@@ -125,19 +125,28 @@ def measure_clothes(image, cm_per_pixel):
 
     # 袖端（肩点から最も遠い輪郭点）
     contour_points = clothes_contour[:, 0, :]
-    left_points = contour_points[contour_points[:, 0] <= center_x]
-    right_points = contour_points[contour_points[:, 0] > center_x]
+
+    # 胴体の中央を境に輪郭点を左右に分割
+    left_mask = contour_points[:, 0] <= center_x
+    left_points = contour_points[left_mask]
+    right_points = contour_points[~left_mask]
     if left_points.size == 0 or right_points.size == 0:
         raise ValueError("Sleeve contour not detected")
 
-    left_dists = np.linalg.norm(left_points - np.array(left_shoulder), axis=1)
-    right_dists = np.linalg.norm(right_points - np.array(right_shoulder), axis=1)
-    left_sleeve_end = tuple(left_points[np.argmax(left_dists)])
-    right_sleeve_end = tuple(right_points[np.argmax(right_dists)])
+    def _furthest_point(points: np.ndarray, shoulder: np.ndarray):
+        """Return the contour point farthest from the given shoulder."""
+        dists = np.linalg.norm(points - shoulder, axis=1)
+        idx = int(np.argmax(dists))
+        return tuple(points[idx]), dists[idx]
 
-    # 肩端から袖端までの距離
-    left_sleeve_length = left_dists.max()
-    right_sleeve_length = right_dists.max()
+    left_sleeve_end, left_sleeve_length = _furthest_point(
+        left_points, np.array(left_shoulder, dtype=np.float64)
+    )
+    right_sleeve_end, right_sleeve_length = _furthest_point(
+        right_points, np.array(right_shoulder, dtype=np.float64)
+    )
+
+    # 肩端から袖端までの距離（左右の平均）
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
 
