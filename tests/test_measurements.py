@@ -2,6 +2,7 @@ import os
 import importlib.util
 import numpy as np
 import cv2
+import pytest
 
 # Load Clothing module from the script without extension
 MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
@@ -47,3 +48,27 @@ def test_measure_clothes_long_sleeve_length():
     # Expected sleeve length from shoulder (80,66) to sleeve end (60,240)
     expected_sleeve = np.hypot(80 - 60, 66 - 240)
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
+
+
+def test_measure_clothes_unreachable_sleeve(monkeypatch):
+    img = create_test_image()
+
+    def fake_compute(left_points, right_points, left_shoulder, right_shoulder):
+        return None, None, float('inf')
+
+    monkeypatch.setattr(clothing, "compute_sleeve_length", fake_compute)
+
+    with pytest.raises(ValueError, match="Sleeve length unreachable"):
+        clothing.measure_clothes(img, cm_per_pixel=1.0)
+
+
+def test_measure_clothes_unreachable_body(monkeypatch):
+    img = create_test_image()
+
+    def fake_shortest(skeleton, start, end):
+        return float('inf')
+
+    monkeypatch.setattr(clothing, "_shortest_path_length", fake_shortest)
+
+    with pytest.raises(ValueError, match="Body length unreachable"):
+        clothing.measure_clothes(img, cm_per_pixel=1.0)

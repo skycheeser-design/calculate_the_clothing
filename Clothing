@@ -298,9 +298,15 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
         left_points, right_points, left_shoulder, right_shoulder
     )
 
+    if np.isinf(sleeve_length):
+        raise ValueError("Sleeve length unreachable")
+
     body_length = _shortest_path_length(
         skeleton, (center_x, top_y), (center_x, bottom_y)
     )
+
+    if np.isinf(body_length):
+        raise ValueError("Body length unreachable")
 
 
 
