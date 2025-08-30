@@ -83,6 +83,21 @@ def _nearest_skeleton_point(skeleton: np.ndarray, point: Tuple[int, int]) -> Tup
     return int(xs[idx]), int(ys[idx])
 
 
+def _skeleton_endpoints(skeleton: np.ndarray) -> np.ndarray:
+    """Return pixels with exactly one 8-connected neighbour."""
+
+    ys, xs = np.nonzero(skeleton)
+    height, width = skeleton.shape
+    endpoints = []
+    for x, y in zip(xs, ys):
+        x0, x1 = max(0, x - 1), min(width - 1, x + 1)
+        y0, y1 = max(0, y - 1), min(height - 1, y + 1)
+        # Count including the pixel itself
+        if np.count_nonzero(skeleton[y0 : y1 + 1, x0 : x1 + 1]) == 2:
+            endpoints.append((x, y))
+    return np.array(endpoints, dtype=int).reshape(-1, 2)
+
+
 def _shortest_path_length(
     skeleton: np.ndarray, start: Tuple[int, int], end: Tuple[int, int]
 ) -> float:
@@ -132,9 +147,11 @@ def _furthest_point(points: np.ndarray, start: np.ndarray):
 
     sx, sy = _nearest_skeleton_point(skeleton, (int(start[0]), int(start[1])))
 
+    endpoints = _skeleton_endpoints(skeleton)
+
     furthest = (sx, sy)
     max_dist = 0.0
-    for x, y in points:
+    for x, y in endpoints:
         length = _shortest_path_length(skeleton, (sx, sy), (int(x), int(y)))
         if length > max_dist:
             max_dist = length
@@ -165,6 +182,7 @@ def compute_sleeve_length(
 
 __all__ = [
     "_nearest_skeleton_point",
+    "_skeleton_endpoints",
     "_shortest_path_length",
     "_furthest_point",
     "compute_sleeve_length",
