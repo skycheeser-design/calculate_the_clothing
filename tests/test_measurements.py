@@ -29,6 +29,7 @@ def create_long_sleeve_image():
     assert abs(measures['身丈'] - 130) < 1.0
     expected_sleeve = (90 - 63) + (80 - 30)  # vertical + horizontal along skeleton
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
+    return img
 
 
 def test_measure_clothes_lengths_long():
