@@ -151,11 +151,17 @@ def _furthest_point(points: np.ndarray, start: np.ndarray):
 
     furthest = (sx, sy)
     max_dist = 0.0
+    found_finite = False
     for x, y in endpoints:
         length = _shortest_path_length(skeleton, (sx, sy), (int(x), int(y)))
+        if np.isinf(length):
+            continue
+        found_finite = True
         if length > max_dist:
             max_dist = length
             furthest = (int(x), int(y))
+    if not found_finite:
+        return (sx, sy), 0.0
     return furthest, float(max_dist)
 
 
