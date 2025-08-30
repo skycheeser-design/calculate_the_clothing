@@ -1,13 +1,7 @@
-import os
-import importlib.util
 import numpy as np
 import cv2
 
-# Load Clothing module from the script without extension
-MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
-spec = importlib.util.spec_from_file_location('clothing', MODULE_PATH)
-clothing = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(clothing)
+from clothing import measure as clothing_measure
 
 
 def create_test_image():
@@ -22,18 +16,18 @@ def create_test_image():
 
 
 def create_long_sleeve_image():
-
     img = create_test_image()
-    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    contour, measures = clothing_measure.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
     assert abs(measures['身丈'] - 130) < 1.0
     expected_sleeve = (90 - 63) + (80 - 30)  # vertical + horizontal along skeleton
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
+    return img
 
 
 def test_measure_clothes_lengths_long():
     img = create_long_sleeve_image()
-    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    contour, measures = clothing_measure.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
     expected_sleeve = 80 - 20  # horizontal length along skeleton
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
@@ -41,8 +35,7 @@ def test_measure_clothes_lengths_long():
 
 def test_measure_clothes_long_sleeve_length():
     img = create_long_sleeve_image()
-    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    contour, measures = clothing_measure.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
-    # Expected sleeve length from shoulder (80,66) to sleeve end (60,240)
     expected_sleeve = np.hypot(80 - 60, 66 - 240)
     assert abs(measures['袖丈'] - expected_sleeve) < 1.0
