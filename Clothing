@@ -123,21 +123,37 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = min_x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖端（肩点から最も遠い輪郭点）
+    # 袖端
     contour_points = clothes_contour[:, 0, :]
-    left_points = contour_points[contour_points[:, 0] <= center_x]
-    right_points = contour_points[contour_points[:, 0] > center_x]
-    if left_points.size == 0 or right_points.size == 0:
-        raise ValueError("Sleeve contour not detected")
 
-    left_dists = np.linalg.norm(left_points - np.array(left_shoulder), axis=1)
-    right_dists = np.linalg.norm(right_points - np.array(right_shoulder), axis=1)
-    left_sleeve_end = tuple(left_points[np.argmax(left_dists)])
-    right_sleeve_end = tuple(right_points[np.argmax(right_dists)])
+    def _sleeve_length(points, shoulder):
+        if points.shape[0] < 2:
+            raise ValueError("Sleeve contour not detected")
 
-    # 肩端から袖端までの距離
-    left_sleeve_length = left_dists.max()
-    right_sleeve_length = right_dists.max()
+        pts = points.astype(np.float64)
+        mean = pts.mean(axis=0)
+        centered = pts - mean
+        cov = np.cov(centered, rowvar=False)
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        direction = eigvecs[:, np.argmax(eigvals)]
+        direction = direction / np.linalg.norm(direction)
+        if np.dot(direction, mean - np.array(shoulder)) < 0:
+            direction = -direction
+
+        if abs(direction[1]) < abs(direction[0]):
+            dists = np.linalg.norm(pts - np.array(shoulder), axis=1)
+            return dists.max()
+        else:
+            proj = (pts - np.array(shoulder)) @ direction
+            proj = proj[proj > 0]
+            if proj.size == 0:
+                raise ValueError("Sleeve contour not detected")
+            return proj.max()
+
+    left_points = contour_points[contour_points[:, 0] <= left_shoulder[0]]
+    right_points = contour_points[contour_points[:, 0] >= right_shoulder[0]]
+    left_sleeve_length = _sleeve_length(left_points, left_shoulder)
+    right_sleeve_length = _sleeve_length(right_points, right_shoulder)
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
 
