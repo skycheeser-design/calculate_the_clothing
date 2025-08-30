@@ -207,9 +207,54 @@ def measure_clothes(image, cm_per_pixel):
     chest_width = max_width
 
     skeleton = skeletonize(mask > 0)
-    points = np.column_stack(np.nonzero(skeleton)[::-1])
-    left_points = points[points[:, 0] < center_x]
-    right_points = points[points[:, 0] >= center_x]
+
+    # Flood-fill from each shoulder on the skeleton to separate sleeves.
+    # Splitting by ``center_x`` fails when the garment is skewed because the
+    # vertical seam no longer corresponds to the sleeve boundary.  Instead we
+    # treat the skeleton as a graph and explore the pixels reachable from each
+    # shoulder.  Pixels reached by both shoulders correspond to the torso and
+    # are therefore excluded from the sleeve point sets.
+
+    ys, xs = np.nonzero(skeleton)
+    if xs.size == 0:
+        raise ValueError("Skeleton is empty")
+
+    def _nearest_skel(pt):
+        dists = (xs - pt[0]) ** 2 + (ys - pt[1]) ** 2
+        idx = np.argmin(dists)
+        return int(xs[idx]), int(ys[idx])
+
+    def _flood(start):
+        stack = [start]
+        visited = set([start])
+        height, width = skeleton.shape
+        neighbors = [
+            (-1, -1), (0, -1), (1, -1),
+            (-1, 0),           (1, 0),
+            (-1, 1),  (0, 1),  (1, 1),
+        ]
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in neighbors:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
+                    if (nx, ny) not in visited:
+                        visited.add((nx, ny))
+                        stack.append((nx, ny))
+        return visited
+
+    left_start = _nearest_skel(left_shoulder)
+    right_start = _nearest_skel(right_shoulder)
+    left_component = _flood(left_start)
+    right_component = _flood(right_start)
+    torso_component = left_component & right_component
+
+    left_points = np.array(list(left_component - torso_component), dtype=int).reshape(-1, 2)
+    right_points = np.array(list(right_component - torso_component), dtype=int).reshape(-1, 2)
+
+    _, _, sleeve_length = compute_sleeve_length(
+        left_points, right_points, left_shoulder, right_shoulder
+    )
 
     body_length = _shortest_path_length(
         skeleton, (center_x, top_y), (center_x, bottom_y)
