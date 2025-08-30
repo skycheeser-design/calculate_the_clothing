@@ -8,6 +8,7 @@ from sleeve import (
     compute_sleeve_length,
     prune_skeleton,
     DEFAULT_PRUNE_THRESHOLD,
+    _nearest_skeleton_point,
 )
 try:
     import pillow_heif
@@ -156,6 +157,56 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
 
 
 # 服計測
+
+
+def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
+    """Split ``skeleton`` into left/right sleeve points via flood fill."""
+    from collections import deque
+
+    height, width = skeleton.shape
+    lx, ly = _nearest_skeleton_point(skeleton, left_shoulder)
+    rx, ry = _nearest_skeleton_point(skeleton, right_shoulder)
+
+    labels = np.zeros((height, width), dtype=np.uint8)
+    queue = deque([(lx, ly, 1), (rx, ry, 2)])
+    labels[ly, lx] = 1
+    labels[ry, rx] = 2
+
+    neighbors = [
+        (-1, -1), (0, -1), (1, -1),
+        (-1, 0),          (1, 0),
+        (-1, 1),  (0, 1),  (1, 1),
+    ]
+
+    while queue:
+        x, y, lbl = queue.popleft()
+        if labels[y, x] == 3:
+            continue
+
+        conflict = False
+        to_add = []
+        for dx, dy in neighbors:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
+                lab = labels[ny, nx]
+                if lab not in (0, lbl, 3):
+                    labels[ny, nx] = 3
+                    labels[y, x] = 3
+                    conflict = True
+                else:
+                    to_add.append((nx, ny, lab))
+        if conflict:
+            continue
+        for nx, ny, lab in to_add:
+            if lab == 0:
+                labels[ny, nx] = lbl
+                queue.append((nx, ny, lbl))
+
+    ly, lx = np.where(labels == 1)
+    ry, rx = np.where(labels == 2)
+    left_points = np.column_stack((lx, ly))
+    right_points = np.column_stack((rx, ry))
+    return left_points, right_points
 def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
@@ -239,11 +290,9 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
     skeleton = skeletonize(mask > 0)
 
     skeleton = prune_skeleton(skeleton, prune_threshold)
-    ys, xs = np.nonzero(skeleton)
-    points = np.column_stack((xs, ys))
-    left_points = points[xs <= center_x]
-    right_points = points[xs >= center_x]
-
+    left_points, right_points = _split_sleeve_points(
+        skeleton, left_shoulder, right_shoulder
+    )
 
     _, _, sleeve_length = compute_sleeve_length(
         left_points, right_points, left_shoulder, right_shoulder
