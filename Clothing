@@ -116,6 +116,7 @@ def measure_clothes(image, cm_per_pixel):
     chest_width = right_chest - left_chest
 
 
+
     left_sleeve_end, left_sleeve_length = _furthest_point(
         left_points, np.array(left_shoulder, dtype=np.float64)
     )
