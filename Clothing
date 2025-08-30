@@ -1,14 +1,22 @@
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import pillow_heif
 import os
-from rembg import remove
+try:
+    import pillow_heif
+except ImportError:  # pragma: no cover
+    pillow_heif = None
+try:
+    from rembg import remove
+except ImportError:  # pragma: no cover
+    remove = None
 
 # HEIC対応読み込み
 def load_image(path):
     ext = os.path.splitext(path)[-1].lower()
     if ext == ".heic":
+        if pillow_heif is None:
+            raise ImportError("pillow_heif is required to load HEIC images")
         heif_file = pillow_heif.read_heif(path)
         img = Image.frombytes(heif_file.mode, heif_file.size, heif_file.data, "raw")
         return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
@@ -44,6 +52,8 @@ def detect_marker(image, marker_size_cm=5.0):
 
 # 背景除去
 def remove_background(image):
+    if remove is None:
+        raise ImportError("rembg is required for background removal")
     result = remove(image)
     return cv2.cvtColor(np.array(result), cv2.COLOR_RGBA2BGR)
 
@@ -113,13 +123,21 @@ def measure_clothes(image, cm_per_pixel):
     right_chest = min_x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖端（凸包の左右端）
-    left_sleeve_end = tuple(hull[hull[:, :, 0].argmin()][0])
-    right_sleeve_end = tuple(hull[hull[:, :, 0].argmax()][0])
+    # 袖端（肩点から最も遠い輪郭点）
+    contour_points = clothes_contour[:, 0, :]
+    left_points = contour_points[contour_points[:, 0] <= center_x]
+    right_points = contour_points[contour_points[:, 0] > center_x]
+    if left_points.size == 0 or right_points.size == 0:
+        raise ValueError("Sleeve contour not detected")
+
+    left_dists = np.linalg.norm(left_points - np.array(left_shoulder), axis=1)
+    right_dists = np.linalg.norm(right_points - np.array(right_shoulder), axis=1)
+    left_sleeve_end = tuple(left_points[np.argmax(left_dists)])
+    right_sleeve_end = tuple(right_points[np.argmax(right_dists)])
 
     # 肩端から袖端までの距離
-    left_sleeve_length = np.linalg.norm(np.array(left_shoulder) - np.array(left_sleeve_end))
-    right_sleeve_length = np.linalg.norm(np.array(right_shoulder) - np.array(right_sleeve_end))
+    left_sleeve_length = left_dists.max()
+    right_sleeve_length = right_dists.max()
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
 
