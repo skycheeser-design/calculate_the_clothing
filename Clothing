@@ -213,6 +213,12 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
 
     skeleton = skeletonize(mask > 0)
 
+    skeleton = prune_skeleton(skeleton, prune_threshold)
+    ys, xs = np.nonzero(skeleton)
+    points = np.column_stack((xs, ys))
+    left_points = points[xs <= center_x]
+    right_points = points[xs >= center_x]
+
 
     _, _, sleeve_length = compute_sleeve_length(
         left_points, right_points, left_shoulder, right_shoulder
