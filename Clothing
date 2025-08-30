@@ -87,18 +87,11 @@ def measure_clothes(image, cm_per_pixel):
     top_y = int(column_pixels.min())
     bottom_y = int(column_pixels.max())
 
-    ys = clothes_contour[:, :, 1]
-    xs = clothes_contour[:, :, 0]
-    min_x = int(xs.min())
-    max_x = int(xs.max())
-    min_y = int(ys.min())
-    max_y = int(ys.max())
-    w = max_x - min_x + 1
     height = bottom_y - top_y
 
     # 肩幅（上から10%の位置での幅）
-    shoulder_y = min_y + int(height * 0.1)
-    shoulder_line = gray[shoulder_y:shoulder_y+5, min_x:min_x+w]
+    shoulder_y = top_y + int(height * 0.1)
+    shoulder_line = mask[shoulder_y:shoulder_y + 5, x:x + w]
     shoulder_points = cv2.findNonZero(shoulder_line)
     if shoulder_points is None:
         raise ValueError("Shoulder line not detected")
@@ -106,60 +99,34 @@ def measure_clothes(image, cm_per_pixel):
     shoulder_ys = shoulder_points[:, 0, 1]
     left_idx = np.argmin(shoulder_xs)
     right_idx = np.argmax(shoulder_xs)
-    left_shoulder = (min_x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
-    right_shoulder = (min_x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
+    left_shoulder = (x + shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
+    right_shoulder = (x + shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
-
     # 身幅（下から30%）
-    chest_y = y + int(h * 0.7)
-    chest_line = gray[chest_y:chest_y+5, x:x+w]
+    chest_y = top_y + int(height * 0.7)
+    chest_line = mask[chest_y:chest_y + 5, x:x + w]
 
     chest_points = cv2.findNonZero(chest_line)
     if chest_points is None:
         raise ValueError("Chest line not detected")
     chest_xs = chest_points[:, 0, 0]
-    left_chest = min_x + chest_xs.min()
-    right_chest = min_x + chest_xs.max()
+    left_chest = x + chest_xs.min()
+    right_chest = x + chest_xs.max()
     chest_width = right_chest - left_chest
 
-    # 袖領域抽出（中央線で左右に分割し連結成分解析）
-    left_mask = np.zeros_like(mask)
-    left_mask[:, :center_x] = mask[:, :center_x]
-    right_mask = np.zeros_like(mask)
-    right_mask[:, center_x:] = mask[:, center_x:]
 
-    _, left_labels = cv2.connectedComponents(left_mask)
-    _, right_labels = cv2.connectedComponents(right_mask)
 
-    left_label = left_labels[left_shoulder[1], left_shoulder[0]]
-    right_label = right_labels[right_shoulder[1], right_shoulder[0]]
+    left_sleeve_end, left_sleeve_length = _furthest_point(
+        left_points, np.array(left_shoulder, dtype=np.float64)
+    )
+    right_sleeve_end, right_sleeve_length = _furthest_point(
+        right_points, np.array(right_shoulder, dtype=np.float64)
+    )
 
-    left_region = np.uint8(left_labels == left_label)
-    right_region = np.uint8(right_labels == right_label)
-
-    left_contours, _ = cv2.findContours(left_region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    right_contours, _ = cv2.findContours(right_region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not left_contours or not right_contours:
-        raise ValueError("Sleeve contour not detected")
-
-    left_points = left_contours[0][:, 0, :]
-    right_points = right_contours[0][:, 0, :]
-
-    # 肩点から最も遠い輪郭点（袖口端）
-    left_dists = np.linalg.norm(left_points - np.array(left_shoulder), axis=1)
-    right_dists = np.linalg.norm(right_points - np.array(right_shoulder), axis=1)
-    left_sleeve_end = tuple(left_points[np.argmax(left_dists)])
-    right_sleeve_end = tuple(right_points[np.argmax(right_dists)])
-
-    # 肩端から袖端までの距離
-    left_sleeve_length = left_dists.max()
-    right_sleeve_length = right_dists.max()
+    # 肩端から袖端までの距離（左右の平均）
     sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
-
-    # 身丈（中央線と輪郭の交点間の距離）
-    body_length = bottom_y - top_y
 
 
     measures = {
