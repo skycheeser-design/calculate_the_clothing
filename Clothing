@@ -7,7 +7,6 @@ from sleeve import (
     _shortest_path_length,
     compute_sleeve_length,
     prune_skeleton,
-    DEFAULT_PRUNE_THRESHOLD,
     _nearest_skeleton_point,
 )
 try:
@@ -207,7 +206,7 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     left_points = np.column_stack((lx, ly))
     right_points = np.column_stack((rx, ry))
     return left_points, right_points
-def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
+def measure_clothes(image, cm_per_pixel):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
     # ノイズ除去のためのクロージング処理
@@ -242,6 +241,7 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
     bottom_y = int(column_pixels.max())
 
     height = bottom_y - top_y
+    prune_threshold = max(5, int(height * 0.02))
 
     # 肩幅（上から10%の位置での幅）
     shoulder_y = top_y + int(height * 0.1)
