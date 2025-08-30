@@ -3,7 +3,12 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
 from skimage.morphology import skeletonize
-from sleeve import _shortest_path_length, compute_sleeve_length
+from sleeve import (
+    _shortest_path_length,
+    compute_sleeve_length,
+    prune_skeleton,
+    DEFAULT_PRUNE_THRESHOLD,
+)
 try:
     import pillow_heif
 except ImportError:  # pragma: no cover
@@ -126,7 +131,7 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
 
 
 # 服計測
-def measure_clothes(image, cm_per_pixel):
+def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
     # ノイズ除去のためのクロージング処理
@@ -207,9 +212,14 @@ def measure_clothes(image, cm_per_pixel):
     chest_width = max_width
 
     skeleton = skeletonize(mask > 0)
+    skeleton = prune_skeleton(skeleton, prune_threshold)
     points = np.column_stack(np.nonzero(skeleton)[::-1])
     left_points = points[points[:, 0] < center_x]
     right_points = points[points[:, 0] >= center_x]
+
+    _, _, sleeve_length = compute_sleeve_length(
+        left_points, right_points, left_shoulder, right_shoulder
+    )
 
     body_length = _shortest_path_length(
         skeleton, (center_x, top_y), (center_x, bottom_y)
