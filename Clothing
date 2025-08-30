@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
-from heapq import heappush, heappop
 from skimage.morphology import skeletonize
+from sleeve import _shortest_path_length, compute_sleeve_length
 try:
     import pillow_heif
 except ImportError:  # pragma: no cover
@@ -125,115 +125,6 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
     return resized, cm_per_pixel / scale
 
 
-def _nearest_skeleton_point(skeleton, point):
-    """Return the skeleton pixel closest to ``point``.
-
-    Parameters
-    ----------
-    skeleton : ndarray
-        Binary skeleton image.
-    point : tuple
-        ``(x, y)`` coordinate.
-    """
-    ys, xs = np.nonzero(skeleton)
-    if xs.size == 0:
-        raise ValueError("Skeleton is empty")
-    dists = (xs - point[0]) ** 2 + (ys - point[1]) ** 2
-    idx = np.argmin(dists)
-    return int(xs[idx]), int(ys[idx])
-
-
-def _shortest_path_length(skeleton, start, end):
-    """Compute shortest path length between two points on a skeleton."""
-    height, width = skeleton.shape
-    visited = np.zeros((height, width), dtype=bool)
-    dist = np.full((height, width), np.inf)
-    sx, sy = start
-    ex, ey = end
-    dist[sy, sx] = 0.0
-    heap = [(0.0, sx, sy)]
-    neighbors = [
-        (-1, -1), (0, -1), (1, -1),
-        (-1, 0),           (1, 0),
-        (-1, 1),  (0, 1),  (1, 1),
-    ]
-    while heap:
-        d, x, y = heappop(heap)
-        if visited[y, x]:
-            continue
-        if (x, y) == (ex, ey):
-            return d
-        visited[y, x] = True
-        for dx, dy in neighbors:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
-                step = 1.41421356 if dx != 0 and dy != 0 else 1.0
-                nd = d + step
-                if nd < dist[ny, nx]:
-                    dist[ny, nx] = nd
-                    heappush(heap, (nd, nx, ny))
-    return np.inf
-
-
-def _distance_map(skeleton, start):
-    """Return a distance map from ``start`` over the skeleton.
-
-    A Dijkstra search (equivalent to BFS with weighted diagonal steps) is
-    performed starting from ``start``. The resulting array holds the shortest
-    distance from ``start`` to every reachable skeleton pixel; non-skeleton
-    pixels remain at ``np.inf``.
-    """
-
-    height, width = skeleton.shape
-    dist = np.full((height, width), np.inf)
-    visited = np.zeros((height, width), dtype=bool)
-
-    sx, sy = _nearest_skeleton_point(skeleton, (int(start[0]), int(start[1])))
-    dist[sy, sx] = 0.0
-    heap = [(0.0, sx, sy)]
-
-    neighbors = [
-        (-1, -1), (0, -1), (1, -1),
-        (-1, 0),           (1, 0),
-        (-1, 1),  (0, 1),  (1, 1),
-    ]
-
-    while heap:
-        d, x, y = heappop(heap)
-        if visited[y, x]:
-            continue
-        visited[y, x] = True
-        for dx, dy in neighbors:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
-                step = 1.41421356 if dx != 0 and dy != 0 else 1.0
-                nd = d + step
-                if nd < dist[ny, nx]:
-                    dist[ny, nx] = nd
-                    heappush(heap, (nd, nx, ny))
-    return dist
-
-
-def _furthest_point(points, dist):
-    """Return the point with maximum distance using a precomputed map.
-
-    Parameters
-    ----------
-    points : ndarray
-        ``(N, 2)`` array of ``(x, y)`` coordinates describing the skeleton.
-    dist : ndarray
-        Distance map as returned by :func:`_distance_map`.
-    """
-
-    if points.size == 0:
-        return (0, 0), 0.0
-
-    dists = dist[points[:, 1], points[:, 0]]
-    idx = np.argmax(dists)
-    furthest = (int(points[idx, 0]), int(points[idx, 1]))
-    max_dist = float(dists[idx])
-    return furthest, max_dist
-
 # 服計測
 def measure_clothes(image, cm_per_pixel):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -324,15 +215,7 @@ def measure_clothes(image, cm_per_pixel):
         skeleton, (center_x, top_y), (center_x, bottom_y)
     )
 
-    # Compute sleeve end points using distance maps from each shoulder.
-    left_dist = _distance_map(skeleton, np.array(left_shoulder, dtype=np.float64))
-    left_sleeve_end, left_sleeve_length = _furthest_point(left_points, left_dist)
 
-    right_dist = _distance_map(skeleton, np.array(right_shoulder, dtype=np.float64))
-    right_sleeve_end, right_sleeve_length = _furthest_point(right_points, right_dist)
-
-    # 肩端から袖端までの距離（左右の平均）
-    sleeve_length = (left_sleeve_length + right_sleeve_length) / 2
 
     measures = {
         "肩幅": shoulder_width * cm_per_pixel,
