@@ -100,6 +100,7 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     cm_per_pixel = None
     best_rect = None
     max_area = 0.0
+    image_area = image.shape[0] * image.shape[1]
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -113,6 +114,13 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
 
         aspect_ratio = w / h if w > h else h / w
         rect_area = w * h
+
+        # Ignore very large candidates that likely correspond to garment parts
+        # (e.g. short sleeves) rather than the small calibration marker.  The
+        # marker is expected to be only a tiny fraction of the image so we
+        # discard anything covering more than roughly a quarter of the frame.
+        if rect_area > image_area * 0.25:
+            continue
 
         if 0.8 < aspect_ratio < 1.25:
             box = cv2.boxPoints(rect)
