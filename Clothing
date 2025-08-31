@@ -27,55 +27,85 @@ def load_image(path):
         return cv2.imread(path)
 
 # 黒四角マーカー検出
-def detect_marker(image, marker_size_cm=5.0, debug=False):
+def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     """Detect a dark square marker and return its pixel-to-cm scale.
 
-    The original implementation relied on a fixed global threshold which is
-    prone to failure under uneven lighting.  We now isolate dark regions in
-    HSV colour space so shadows and highlights are handled more robustly.  The
-    function verifies that the candidate contour approximates a four sided
-    polygon and returns the corresponding centimetres-per-pixel value.  Unless
-    ``debug`` is ``True`` the input ``image`` is left unmodified.
+    The previous implementation relied on simple HSV thresholding with a fixed
+    value.  This was brittle in real photographs where lighting conditions
+    change across the frame or the image contains small noise speckles.  The
+    current approach performs the following steps:
+
+    1. Convert to grey and apply both Otsu and adaptive thresholding so the
+       binary mask adapts to global as well as local illumination.
+    2. Use ``cv2.morphologyEx`` with opening and closing operations to remove
+       small artefacts from the mask.
+    3. Extract contours and evaluate each using ``cv2.minAreaRect`` so rotated
+       markers are handled correctly.  Candidates are filtered by aspect ratio
+       and area to avoid false positives.
     """
 
-    # Use HSV thresholding to isolate dark regions regardless of illumination.
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower = np.array([0, 0, 0])
-    upper = np.array([180, 255, 60])
-    mask = cv2.inRange(hsv, lower, upper)
+    # --- Step 1: robust binarisation ------------------------------------
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
+    # Global Otsu thresholding combined with adaptive thresholding for local
+    # variations.  The union of both masks works well for diverse lighting.
+    _, otsu = cv2.threshold(
+        blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )
+    adaptive = cv2.adaptiveThreshold(
+        blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 5
+    )
+    mask = cv2.bitwise_or(otsu, adaptive)
+
+    # --- Step 2: morphological noise removal ----------------------------
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    # --- Step 3: contour analysis ---------------------------------------
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     cm_per_pixel = None
-    best_cnt = None
-    max_area = 0
+    best_rect = None
+    max_area = 0.0
 
     for cnt in contours:
         area = cv2.contourArea(cnt)
-        if area > 100:  # 小さいマーカーにも対応するため閾値を下げる
-            peri = cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-            if len(approx) == 4:
-                x, y, w, h = cv2.boundingRect(approx)
-                aspect_ratio = w / float(h)
-                if 0.9 < aspect_ratio < 1.1 and area > max_area:
-                    max_area = area
-                    best_cnt = approx
+        if area < 100:  # ignore tiny blobs
+            continue
 
-    if best_cnt is not None:
-        x, y, w, h = cv2.boundingRect(best_cnt)
+        rect = cv2.minAreaRect(cnt)
+        (cx, cy), (w, h), angle = rect
+        if w == 0 or h == 0:
+            continue
+
+        aspect_ratio = w / h if w > h else h / w
+        rect_area = w * h
+
+        # Accept nearly square shapes with sufficient area
+        if 0.8 < aspect_ratio < 1.25 and rect_area > max_area:
+            max_area = rect_area
+            best_rect = rect
+
+    if best_rect is not None:
+        (cx, cy), (w, h), angle = best_rect
         cm_per_pixel = marker_size_cm / np.mean([w, h])
+
         if debug:
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            box = cv2.boxPoints(best_rect)
+            box = np.intp(box)
+            cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
             cv2.putText(
                 image,
                 "Marker",
-                (x, y - 10),
+                (int(cx), int(cy)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 0, 255),
                 2,
             )
+
     return cm_per_pixel
 
 # 背景除去
