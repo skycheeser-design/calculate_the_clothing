@@ -1,18 +1,13 @@
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
-from sleeve import (
-    _nearest_skeleton_point,
-    _shortest_path_length,
-    compute_sleeve_length,
-    prune_skeleton,
-    DEFAULT_PRUNE_THRESHOLD,
-)
 
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
     from collections import deque
+    # Import here to avoid circular dependency with :mod:`sleeve`.
+    from sleeve import _nearest_skeleton_point
 
     height, width = skeleton.shape
     lx, ly = _nearest_skeleton_point(skeleton, left_shoulder)
@@ -60,7 +55,17 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     return left_points, right_points
 
 
-def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
+def measure_clothes(image, cm_per_pixel, prune_threshold=None):
+    # Import lazily to avoid circular imports when :mod:`sleeve` needs
+    # ``measure_clothes`` from this module.
+    from sleeve import (
+        _shortest_path_length,
+        compute_sleeve_length,
+        prune_skeleton,
+        DEFAULT_PRUNE_THRESHOLD,
+    )
+    if prune_threshold is None:
+        prune_threshold = DEFAULT_PRUNE_THRESHOLD
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
     # ノイズ除去のためのクロージング処理
