@@ -110,14 +110,30 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
     right_shoulder = (shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
-    # 身幅：胴体の25%〜50%の範囲を探索し、最大幅を採用
+    # 身幅：胴体の25%〜50%の範囲を探索し、中心線と連結した領域のみを測定
     kernel_size = max(3, height // 10)
     vertical_kernel = np.ones((kernel_size, 1), np.uint8)
     torso_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, vertical_kernel)
     torso_mask = cv2.morphologyEx(torso_mask, cv2.MORPH_CLOSE, vertical_kernel)
 
-    max_width = 0
+    # 袖を胴体から切り離すために横方向に細長いカーネルでエロージョン→ダイレーション
+    horiz_size = max(3, w // 8)
+    horizontal_kernel = np.ones((1, horiz_size), np.uint8)
+    torso_mask = cv2.erode(torso_mask, horizontal_kernel, iterations=1)
+    torso_mask = cv2.dilate(torso_mask, horizontal_kernel, iterations=1)
+
+    # 中央列と連結している領域のみを残す
+    num_labels, labels, _stats, _centroids = cv2.connectedComponentsWithStats(torso_mask)
     center_rel = center_x
+    center_labels = np.unique(labels[:, center_rel])
+    torso_only = np.zeros_like(torso_mask)
+    for lbl in center_labels:
+        if lbl == 0:
+            continue
+        torso_only[labels == lbl] = 255
+    torso_mask = torso_only
+
+    max_width = 0
     start_y = int(top_y + height * 0.25)
     end_y = int(top_y + height * 0.5)
 
