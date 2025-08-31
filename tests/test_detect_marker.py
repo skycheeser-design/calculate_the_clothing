@@ -104,3 +104,22 @@ def test_detect_marker_perspective_and_partial(mode):
     assert cm_per_pixel is not None
     assert abs(cm_per_pixel - expected_cpp) < 0.03
 
+
+def test_detect_marker_ignores_large_dark_regions():
+    """Large dark areas resembling sleeves should not be misidentified as markers."""
+    clothing = _load_module()
+
+    img = np.full((200, 200, 3), 255, dtype=np.uint8)
+
+    # Simulate a large dark sleeve occupying much of the frame
+    cv2.rectangle(img, (0, 0), (150, 150), (0, 0, 0), -1)
+
+    # Place the actual 40x40 marker in the opposite corner
+    cv2.rectangle(img, (150, 150), (190, 190), (0, 0, 0), -1)
+
+    cm_per_pixel = clothing.detect_marker(img.copy(), marker_size_cm=5.0)
+
+    # 5 cm marker represented by 40 pixels → 0.125 cm per pixel expected
+    assert cm_per_pixel is not None
+    assert abs(cm_per_pixel - 0.125) < 0.02
+
