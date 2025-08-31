@@ -136,6 +136,13 @@ def _shortest_path_length(
     return float(np.inf)
 
 
+# Backwards compatible public alias.  Some callers historically imported the
+# private ``_shortest_path_length`` symbol directly; others expect a public
+# ``shortest_path_length``.  Export both names so either style continues to
+# work without raising ``ImportError``.
+shortest_path_length = _shortest_path_length
+
+
 def _furthest_point(points: np.ndarray, start: np.ndarray):
     """Return the furthest point from ``start`` along a skeleton."""
 
@@ -193,6 +200,7 @@ __all__ = [
     "_nearest_skeleton_point",
     "_skeleton_endpoints",
     "_shortest_path_length",
+    "shortest_path_length",
     "_furthest_point",
     "compute_sleeve_length",
     "prune_skeleton",

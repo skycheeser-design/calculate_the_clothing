@@ -56,14 +56,52 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
 
 
 def measure_clothes(image, cm_per_pixel, prune_threshold=None):
+    """Measure key dimensions of the garment contained in ``image``."""
+
     # Import lazily to avoid circular imports when :mod:`sleeve` needs
-    # ``measure_clothes`` from this module.
-    from sleeve import (
-        _shortest_path_length,
-        compute_sleeve_length,
-        prune_skeleton,
-        DEFAULT_PRUNE_THRESHOLD,
-    )
+    # ``measure_clothes`` from this module.  Older installations of
+    # :mod:`sleeve` might not provide ``_shortest_path_length`` which is
+    # required for computing body length.  To keep ``measure_clothes`` working
+    # on such versions we attempt the import and fall back to a local
+    # implementation when it fails.
+    from sleeve import compute_sleeve_length, prune_skeleton, DEFAULT_PRUNE_THRESHOLD
+
+    try:  # pragma: no cover - exercised only on outdated ``sleeve`` versions
+        from sleeve import _shortest_path_length  # type: ignore
+    except ImportError:  # pragma: no cover
+
+        def _shortest_path_length(skeleton, start, end):
+            from heapq import heappush, heappop
+
+            height, width = skeleton.shape
+            visited = np.zeros((height, width), dtype=bool)
+            dist = np.full((height, width), np.inf)
+            sx, sy = start
+            ex, ey = end
+            dist[sy, sx] = 0.0
+            heap = [(0.0, sx, sy)]
+            neighbours = [
+                (-1, -1), (0, -1), (1, -1),
+                (-1, 0),          (1, 0),
+                (-1, 1),  (0, 1), (1, 1),
+            ]
+            while heap:
+                d, x, y = heappop(heap)
+                if visited[y, x]:
+                    continue
+                if (x, y) == (ex, ey):
+                    return d
+                visited[y, x] = True
+                for dx, dy in neighbours:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
+                        step = 1.41421356 if dx and dy else 1.0
+                        nd = d + step
+                        if nd < dist[ny, nx]:
+                            dist[ny, nx] = nd
+                            heappush(heap, (nd, nx, ny))
+            return float(np.inf)
+
     if prune_threshold is None:
         prune_threshold = DEFAULT_PRUNE_THRESHOLD
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
