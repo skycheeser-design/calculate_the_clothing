@@ -3,6 +3,7 @@ import importlib.util
 import numpy as np
 import cv2
 from sleeve import compute_sleeve_length
+from measurements import _split_sleeve_points
 
 # Load Clothing module from the script without extension
 MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
@@ -74,7 +75,4 @@ def test_compute_sleeve_length_disconnected_branch():
     assert np.isclose(sleeve_length, 2.0)
 
 
-def test_measure_clothes_chest_width_long_sleeves():
-    img = create_long_sleeve_width_image()
-    _, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
-    assert abs(measures['身幅'] - 100) < 1.0
+

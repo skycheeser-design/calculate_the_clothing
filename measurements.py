@@ -154,6 +154,17 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
         raise ValueError("Chest line not detected")
     chest_width = max_width
 
+    # Erode horizontally around the armpit region to weaken the connection
+    # between sleeves and torso before skeletonisation. This helps ensure the
+    # sleeves are treated as separate branches when extracting their skeletons.
+    armpit_start = top_y + int(height * 0.2)
+    armpit_end = top_y + int(height * 0.4)
+    kernel_width = max(3, w // 30)
+    horiz_kernel = np.ones((1, kernel_width), np.uint8)
+    mask[armpit_start:armpit_end] = cv2.erode(
+        mask[armpit_start:armpit_end], horiz_kernel
+    )
+
     skeleton = skeletonize(mask > 0)
 
     skeleton = prune_skeleton(skeleton, prune_threshold)

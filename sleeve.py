@@ -7,13 +7,16 @@ parallelised or even executed on separate workers in the future.
 from concurrent.futures import ThreadPoolExecutor
 from heapq import heappush, heappop
 from typing import Tuple
+import os
 
 import cv2
 import numpy as np
 
 # Default minimum branch length to keep when pruning skeletons. Exposed as a
-# module level constant so callers can tune it if needed.
-DEFAULT_PRUNE_THRESHOLD = 20
+# module level constant so callers can tune it if needed. The value can also be
+# overridden via the ``PRUNE_THRESHOLD`` environment variable to better suit
+# different sleeve lengths.
+DEFAULT_PRUNE_THRESHOLD = int(os.getenv("PRUNE_THRESHOLD", "20"))
 
 
 def prune_skeleton(skeleton: np.ndarray, min_length: int = DEFAULT_PRUNE_THRESHOLD) -> np.ndarray:
