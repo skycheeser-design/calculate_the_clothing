@@ -70,3 +70,37 @@ def test_detect_marker_debug_image():
     assert debug_img.shape == img.shape
     assert np.any(debug_img != img)
 
+
+@pytest.mark.parametrize("mode", ["perspective", "partial"])
+def test_detect_marker_perspective_and_partial(mode):
+    clothing = _load_module()
+
+    base = np.full((200, 200, 3), 255, dtype=np.uint8)
+    cv2.rectangle(base, (75, 75), (125, 125), (0, 0, 0), -1)
+
+    if mode == "perspective":
+        pts1 = np.float32([[0, 0], [200, 0], [200, 200], [0, 200]])
+        pts2 = np.float32([[0, 0], [200, 0], [180, 200], [20, 200]])
+        M = cv2.getPerspectiveTransform(pts1, pts2)
+        img = cv2.warpPerspective(base, M, (200, 200))
+        marker_pts = np.float32(
+            [[75, 75], [125, 75], [125, 125], [75, 125]]
+        ).reshape(-1, 1, 2)
+        warped_pts = cv2.perspectiveTransform(marker_pts, M).reshape(-1, 2)
+        d12 = np.linalg.norm(warped_pts[0] - warped_pts[1])
+        d34 = np.linalg.norm(warped_pts[2] - warped_pts[3])
+        d23 = np.linalg.norm(warped_pts[1] - warped_pts[2])
+        d41 = np.linalg.norm(warped_pts[3] - warped_pts[0])
+        mean_dim = (d12 + d34 + d23 + d41) / 4
+        expected_cpp = 5.0 / mean_dim
+    else:
+        img = base
+        cv2.rectangle(img, (75, 75), (125, 80), (255, 255, 255), -1)
+        mean_dim = (50 + 45) / 2
+        expected_cpp = 5.0 / mean_dim
+
+    cm_per_pixel = clothing.detect_marker(img.copy(), marker_size_cm=5.0)
+
+    assert cm_per_pixel is not None
+    assert abs(cm_per_pixel - expected_cpp) < 0.03
+
