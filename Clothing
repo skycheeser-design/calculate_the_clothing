@@ -207,9 +207,21 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     left_points = np.column_stack((lx, ly))
     right_points = np.column_stack((rx, ry))
     return left_points, right_points
-def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
+def measure_clothes(
+    image,
+    cm_per_pixel,
+    prune_threshold=DEFAULT_PRUNE_THRESHOLD,
+    block_size=11,
+    C=2,
+):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+    # Global thresholds struggled with subtle sleeve edges under uneven lighting.
+    # Adaptive thresholding adjusts to local brightness, yielding cleaner sleeve masks.
+    thresh = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, C
+    )
+    # Background pixels can become white after adaptive thresholding; reset them to 0.
+    thresh[gray == 0] = 0
     # ノイズ除去のためのクロージング処理
     kernel = np.ones((5, 5), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
