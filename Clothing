@@ -155,13 +155,38 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
     )
     return resized, cm_per_pixel / scale
 
-
+ 
 # 服計測
 
 
+# Kernel size used when eroding the skeleton to separate sleeves from the
+# torso.  Adjust this value if sleeves remain connected or lose too much
+# detail during preprocessing.
+SLEEVE_SPLIT_KERNEL = 3
+
+
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
-    """Split ``skeleton`` into left/right sleeve points via flood fill."""
+    """Split ``skeleton`` into left/right sleeve points via flood fill.
+
+    A light morphological erosion is applied prior to the flood fill in order
+    to break thin bridges between the torso and sleeves.  When the erosion
+    removes too much detail the result is dilated once to recover connectivity.
+    The kernel size used for the morphology operation is configurable via
+    ``SLEEVE_SPLIT_KERNEL`` defined above.
+    """
+
     from collections import deque
+
+    # Convert the skeleton to uint8 for OpenCV morphology operations.
+    skel_uint8 = (skeleton.astype(np.uint8))
+    kernel = np.ones((SLEEVE_SPLIT_KERNEL, SLEEVE_SPLIT_KERNEL), np.uint8)
+    eroded = cv2.erode(skel_uint8, kernel, iterations=1)
+
+    # If erosion eliminated most of the skeleton, dilate to recover detail.
+    if np.count_nonzero(eroded) < np.count_nonzero(skel_uint8) * 0.5:
+        eroded = cv2.dilate(eroded, kernel, iterations=1)
+
+    skeleton = eroded.astype(bool)
 
     height, width = skeleton.shape
     lx, ly = _nearest_skeleton_point(skeleton, left_shoulder)
