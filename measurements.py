@@ -59,7 +59,7 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     # Import lazily to avoid circular imports when :mod:`sleeve` needs
     # ``measure_clothes`` from this module.
     from sleeve import (
-        _shortest_path_length,
+
         compute_sleeve_length,
         prune_skeleton,
         DEFAULT_PRUNE_THRESHOLD,
@@ -194,5 +194,5 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     return hull, measures
 
 
-__all__ = ["measure_clothes", "_split_sleeve_points"]
+__all__ = ["measure_clothes", "_split_sleeve_points", "_shortest_path_length"]
 
