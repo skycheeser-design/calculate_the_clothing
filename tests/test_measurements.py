@@ -33,6 +33,15 @@ def create_long_sleeve_image():
     return img
 
 
+def create_long_sleeve_width_image():
+    """Create an image with long sleeves to test chest width calculation."""
+    img = np.zeros((200, 300, 3), dtype=np.uint8)
+    cv2.rectangle(img, (100, 50), (200, 180), (255, 255, 255), -1)
+    cv2.rectangle(img, (50, 70), (100, 150), (255, 255, 255), -1)
+    cv2.rectangle(img, (200, 70), (250, 150), (255, 255, 255), -1)
+    return img
+
+
 def test_measure_clothes_lengths_long():
     img = create_long_sleeve_image()
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
@@ -63,3 +72,9 @@ def test_compute_sleeve_length_disconnected_branch():
     assert np.isfinite(sleeve_length)
     assert right_end == right_shoulder
     assert np.isclose(sleeve_length, 2.0)
+
+
+def test_measure_clothes_chest_width_long_sleeves():
+    img = create_long_sleeve_width_image()
+    _, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    assert abs(measures['身幅'] - 100) < 1.0
