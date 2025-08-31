@@ -1,18 +1,14 @@
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
-from sleeve import (
-    _nearest_skeleton_point,
-    _shortest_path_length,
-    compute_sleeve_length,
-    prune_skeleton,
-    DEFAULT_PRUNE_THRESHOLD,
-)
+from heapq import heappush, heappop
 
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
     from collections import deque
+    # Import here to avoid circular dependency with :mod:`sleeve`.
+    from sleeve import _nearest_skeleton_point
 
     height, width = skeleton.shape
     lx, ly = _nearest_skeleton_point(skeleton, left_shoulder)
@@ -60,7 +56,49 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     return left_points, right_points
 
 
-def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD):
+def _shortest_path_length(skeleton, start, end):
+    """Compute shortest path length between two points on a skeleton."""
+
+    height, width = skeleton.shape
+    visited = np.zeros((height, width), dtype=bool)
+    dist = np.full((height, width), np.inf)
+    sx, sy = start
+    ex, ey = end
+    dist[sy, sx] = 0.0
+    heap = [(0.0, sx, sy)]
+    neighbors = [
+        (-1, -1), (0, -1), (1, -1),
+        (-1, 0),          (1, 0),
+        (-1, 1),  (0, 1),  (1, 1),
+    ]
+    while heap:
+        d, x, y = heappop(heap)
+        if visited[y, x]:
+            continue
+        if (x, y) == (ex, ey):
+            return d
+        visited[y, x] = True
+        for dx, dy in neighbors:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height and skeleton[ny, nx]:
+                step = 1.41421356 if dx != 0 and dy != 0 else 1.0
+                nd = d + step
+                if nd < dist[ny, nx]:
+                    dist[ny, nx] = nd
+                    heappush(heap, (nd, nx, ny))
+    return float(np.inf)
+
+
+def measure_clothes(image, cm_per_pixel, prune_threshold=None):
+    # Import lazily to avoid circular imports when :mod:`sleeve` needs
+    # ``measure_clothes`` from this module.
+    from sleeve import (
+        compute_sleeve_length,
+        prune_skeleton,
+        DEFAULT_PRUNE_THRESHOLD,
+    )
+    if prune_threshold is None:
+        prune_threshold = DEFAULT_PRUNE_THRESHOLD
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
     # ノイズ除去のためのクロージング処理
@@ -189,5 +227,5 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=DEFAULT_PRUNE_THRESHOLD
     return hull, measures
 
 
-__all__ = ["measure_clothes", "_split_sleeve_points"]
+__all__ = ["measure_clothes", "_split_sleeve_points", "_shortest_path_length"]
 
