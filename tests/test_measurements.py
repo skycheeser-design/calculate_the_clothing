@@ -3,6 +3,7 @@ import importlib.util
 import numpy as np
 import cv2
 from sleeve import compute_sleeve_length
+from measurements import _split_sleeve_points
 
 # Load Clothing module from the script without extension
 MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
@@ -63,3 +64,17 @@ def test_compute_sleeve_length_disconnected_branch():
     assert np.isfinite(sleeve_length)
     assert right_end == right_shoulder
     assert np.isclose(sleeve_length, 2.0)
+
+
+def test_split_sleeve_points_separates_sleeves():
+    skeleton = np.zeros((40, 80), dtype=bool)
+    skeleton[5:35, 40] = True  # body
+    skeleton[15, 10:40] = True  # left sleeve
+    skeleton[15, 40:70] = True  # right sleeve
+    left_shoulder = (10, 15)
+    right_shoulder = (70, 15)
+    left_points, right_points = _split_sleeve_points(
+        skeleton, left_shoulder, right_shoulder
+    )
+    assert left_points.size > 0 and right_points.size > 0
+    assert left_points[:, 0].max() < right_points[:, 0].min()
