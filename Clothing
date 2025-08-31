@@ -59,9 +59,15 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     mask = cv2.bitwise_or(otsu, adaptive)
 
     # --- Step 2: morphological noise removal ----------------------------
-    kernel = np.ones((3, 3), np.uint8)
+    # ``np.ones`` would also work here, but ``getStructuringElement`` makes the
+    # intent explicit and allows different shapes to be experimented with in
+    # the future.  Opening followed by closing eliminates isolated pixels and
+    # fills tiny holes.  A final median blur further smooths salt-and-pepper
+    # noise that occasionally survives the morphological operations.
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    mask = cv2.medianBlur(mask, 3)
 
     # --- Step 3: contour analysis ---------------------------------------
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
