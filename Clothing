@@ -76,6 +76,13 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     )
     mask = cv2.bitwise_or(otsu, adaptive)
 
+    # Additional robustness: filter very dark regions in HSV space.  This helps
+    # to keep black areas even when the overall illumination is uneven.  The
+    # resulting mask is combined with the binary mask obtained above.
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    dark = cv2.inRange(hsv, (0, 0, 0), (180, 255, 60))
+    mask = cv2.bitwise_or(mask, dark)
+
     # --- Step 2: morphological noise removal ----------------------------
     # ``np.ones`` would also work here, but ``getStructuringElement`` makes the
     # intent explicit and allows different shapes to be experimented with in
@@ -107,23 +114,45 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
         aspect_ratio = w / h if w > h else h / w
         rect_area = w * h
 
-        # Accept nearly square shapes with sufficient area
-        if 0.8 < aspect_ratio < 1.25 and rect_area > max_area:
-            max_area = rect_area
-            best_rect = rect
+        if 0.8 < aspect_ratio < 1.25:
+            box = cv2.boxPoints(rect)
+            box = np.intp(box)
+
+            rect_mask = np.zeros_like(gray)
+            cv2.drawContours(rect_mask, [box], 0, 255, -1)
+            inner_mean = cv2.mean(gray, mask=rect_mask)[0]
+
+            dilated = cv2.dilate(
+                rect_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+            )
+            ring_mask = cv2.subtract(dilated, rect_mask)
+            ring_pixels = cv2.countNonZero(ring_mask)
+            outer_mean = (
+                cv2.mean(gray, mask=ring_mask)[0] if ring_pixels > 0 else 255
+            )
+
+            if outer_mean - inner_mean >= 20 and rect_area > max_area:
+                max_area = rect_area
+                best_rect = rect
 
     if best_rect is not None:
         (cx, cy), (w, h), angle = best_rect
         box = cv2.boxPoints(best_rect)
         box = np.intp(box)
 
-        # Ensure the candidate is sufficiently dark compared to the
-        # surroundings.  This additional check removes rare false positives that
-        # survive the morphological filtering stage.
         rect_mask = np.zeros_like(gray)
         cv2.drawContours(rect_mask, [box], 0, 255, -1)
-        mean_val = cv2.mean(gray, mask=rect_mask)[0]
-        if mean_val < 80:  # appears dark enough to be the marker
+        inner_mean = cv2.mean(gray, mask=rect_mask)[0]
+        dilated = cv2.dilate(
+            rect_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+        )
+        ring_mask = cv2.subtract(dilated, rect_mask)
+        ring_pixels = cv2.countNonZero(ring_mask)
+        outer_mean = (
+            cv2.mean(gray, mask=ring_mask)[0] if ring_pixels > 0 else 255
+        )
+
+        if outer_mean - inner_mean >= 20:
             cm_per_pixel = marker_size_cm / np.mean([w, h])
             if debug:
                 cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
