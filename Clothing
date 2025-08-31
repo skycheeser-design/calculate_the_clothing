@@ -42,6 +42,24 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     3. Extract contours and evaluate each using ``cv2.minAreaRect`` so rotated
        markers are handled correctly.  Candidates are filtered by aspect ratio
        and area to avoid false positives.
+
+    Parameters
+    ----------
+    image : numpy.ndarray
+        Input BGR image containing the marker.
+    marker_size_cm : float, default ``5.0``
+        Physical size of the marker in centimetres.
+    debug : bool, default ``False``
+        If ``True`` the function also returns an image with visualisation of
+        the detection result.
+
+    Returns
+    -------
+    float or tuple
+        When ``debug`` is ``False`` only the ``cm_per_pixel`` scale is
+        returned.  If ``debug`` is ``True`` a tuple of ``(cm_per_pixel,
+        debug_image)`` is returned where ``debug_image`` contains drawings that
+        indicate whether the marker was found.
     """
 
     # --- Step 1: robust binarisation ------------------------------------
@@ -96,23 +114,43 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
 
     if best_rect is not None:
         (cx, cy), (w, h), angle = best_rect
-        cm_per_pixel = marker_size_cm / np.mean([w, h])
+        box = cv2.boxPoints(best_rect)
+        box = np.intp(box)
 
-        if debug:
-            box = cv2.boxPoints(best_rect)
-            box = np.intp(box)
-            cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
-            cv2.putText(
-                image,
-                "Marker",
-                (int(cx), int(cy)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 0, 255),
-                2,
-            )
+        # Ensure the candidate is sufficiently dark compared to the
+        # surroundings.  This additional check removes rare false positives that
+        # survive the morphological filtering stage.
+        rect_mask = np.zeros_like(gray)
+        cv2.drawContours(rect_mask, [box], 0, 255, -1)
+        mean_val = cv2.mean(gray, mask=rect_mask)[0]
+        if mean_val < 80:  # appears dark enough to be the marker
+            cm_per_pixel = marker_size_cm / np.mean([w, h])
+            if debug:
+                cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
+                cv2.putText(
+                    image,
+                    "Marker",
+                    (int(cx), int(cy)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 255),
+                    2,
+                )
 
-    return cm_per_pixel
+    if debug and cm_per_pixel is None:
+        # Provide visual feedback that detection failed so callers can
+        # understand what happened.
+        cv2.putText(
+            image,
+            "No marker",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            2,
+        )
+
+    return (cm_per_pixel, image) if debug else cm_per_pixel
 
 # 背景除去
 def remove_background(image, max_size=None):
@@ -279,10 +317,14 @@ if __name__ == "__main__":
     img = load_image(image_path)
 
     # マーカー検出（背景除去前）
-    cm_per_pixel = detect_marker(img)
+    cm_per_pixel, debug_img = detect_marker(img, debug=True)
     if cm_per_pixel is None:
         print("マーカーが検出できません。終了します。")
+        cv2.imwrite("marker_debug.jpg", debug_img)
+        print("検出状況を marker_debug.jpg に保存しました")
         exit()
+    else:
+        cv2.imwrite("marker_debug.jpg", debug_img)
 
     # 必要に応じて画像を縮小し、縮尺も調整
     img, cm_per_pixel = resize_for_speed(img, cm_per_pixel)

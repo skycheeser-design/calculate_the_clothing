@@ -54,3 +54,19 @@ def test_detect_marker_various_conditions(bg_color, angle):
     # The marker is 50x50 pixels → 5cm / 50px = 0.1 cm per pixel.
     assert abs(cm_per_pixel - 0.1) < 0.02
 
+
+def test_detect_marker_debug_image():
+    clothing = _load_module()
+
+    img = np.full((200, 200, 3), 255, dtype=np.uint8)
+    cv2.rectangle(img, (75, 75), (125, 125), (0, 0, 0), -1)
+
+    cm_per_pixel, debug_img = clothing.detect_marker(img.copy(), marker_size_cm=5.0, debug=True)
+
+    assert cm_per_pixel is not None
+    # The debug image should have the same shape but contain drawings compared to
+    # the original.  A simple inequality check is sufficient here because the
+    # bounding box and label introduce colour differences.
+    assert debug_img.shape == img.shape
+    assert np.any(debug_img != img)
+
