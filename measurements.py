@@ -170,8 +170,13 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     torso_mask = cv2.erode(torso_mask, horizontal_kernel, iterations=1)
     torso_mask = cv2.dilate(torso_mask, horizontal_kernel, iterations=1)
 
-    # 中央列と連結している領域のみを残す
-    num_labels, labels, _stats, _centroids = cv2.connectedComponentsWithStats(torso_mask)
+    # 中央列と連結している領域のみを残す。袖が裾付近で胴体と繋がって
+    # しまうと身幅が過大に測定されるため、胴体の下部 40% を一時的に
+    # 無視して連結成分を抽出する。
+    torso_mask_cc = torso_mask.copy()
+    bottom_cut = top_y + int(height * 0.6)
+    torso_mask_cc[bottom_cut:, :] = 0
+    num_labels, labels, _stats, _centroids = cv2.connectedComponentsWithStats(torso_mask_cc)
     center_rel = center_x
     center_labels = np.unique(labels[:, center_rel])
     torso_only = np.zeros_like(torso_mask)
