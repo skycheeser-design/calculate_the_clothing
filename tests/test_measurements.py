@@ -76,3 +76,20 @@ def test_compute_sleeve_length_disconnected_branch():
 
 
 
+def test_measure_clothes_disconnected_skeleton_fallback(monkeypatch):
+    img = create_test_image()
+
+    # Simulate a disconnected skeleton by forcing the shortest path to return
+    # infinity. The measurement should fall back to the bounding-box height
+    # instead of propagating ``inf``.
+    monkeypatch.setattr(
+        "sleeve._shortest_path_length", lambda *args, **kwargs: float("inf")
+    )
+
+    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    assert contour is not None
+    assert np.isfinite(measures["身丈"])
+    # The bounding-box height of ``create_test_image`` is 130 pixels.
+    assert abs(measures["身丈"] - 130) < 1.0
+
+
