@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
+import numbers
 from measurements import measure_clothes
 try:
     import pillow_heif
@@ -348,7 +349,10 @@ def draw_measurements_on_image(image, measurements, font_path=None, font_size=No
     y_offset = 30
     line_height = int(font_size * 1.2)
     for key, value in measurements.items():
-        text = f"{key}: {value:.1f} cm"
+        if isinstance(value, numbers.Number):
+            text = f"{key}: {value:.1f} cm"
+        else:
+            text = f"{key}: {value}"
         draw.text((30, y_offset), text, font=font, fill=(0, 255, 0))
         y_offset += line_height
 
@@ -388,7 +392,10 @@ if __name__ == "__main__":
 
     # 寸法表示
     for k, v in measurements.items():
-        print(f"{k}: {v:.1f} cm")
+        if isinstance(v, numbers.Number):
+            print(f"{k}: {v:.1f} cm")
+        else:
+            print(f"{k}: {v}")
 
     font_path = os.getenv("JP_FONT_PATH")
     img_with_text = draw_measurements_on_image(
