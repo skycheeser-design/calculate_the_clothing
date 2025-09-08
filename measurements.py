@@ -208,7 +208,7 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
         torso_only[labels == lbl] = 255
     torso_mask = torso_only
 
-    max_width = 0
+    widths = []
     start_y = int(top_y + height * 0.25)
     end_y = int(top_y + height * 0.5)
 
@@ -220,14 +220,12 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
         segments = np.split(xs, np.where(np.diff(xs) > 1)[0] + 1)
         for seg in segments:
             if seg[0] <= center_rel <= seg[-1]:
-                width = seg[-1] - seg[0]
-                if width > max_width:
-                    max_width = width
+                widths.append(seg[-1] - seg[0])
                 break
 
-    if max_width == 0:
+    if not widths:
         raise ValueError("Chest line not detected")
-    chest_width = max_width
+    chest_width = float(np.median(widths))
 
     # Erode horizontally around the armpit region to weaken the connection
     # between sleeves and torso before skeletonisation. This helps ensure the

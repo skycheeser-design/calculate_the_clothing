@@ -52,6 +52,16 @@ def create_very_long_sleeve_image():
     return img
 
 
+def create_chest_width_outlier_image():
+    """Create an image with a small protrusion around the chest area."""
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    cv2.rectangle(img, (80, 50), (120, 180), (255, 255, 255), -1)
+    # Add a narrow triangle on the left side that should be ignored
+    protrusion = np.array([[80, 100], [30, 110], [80, 120]], np.int32)
+    cv2.fillConvexPoly(img, protrusion, (255, 255, 255))
+    return img
+
+
 def test_measure_clothes_lengths_long():
     img = create_long_sleeve_image()
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
@@ -107,5 +117,12 @@ def test_measure_clothes_chest_width_with_long_sleeves():
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
     assert abs(measures["身幅"] - 100) < 1.0
+
+
+def test_measure_clothes_chest_width_ignores_outlier():
+    img = create_chest_width_outlier_image()
+    contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
+    assert contour is not None
+    assert abs(measures["身幅"] - 40) < 1.0
 
 
