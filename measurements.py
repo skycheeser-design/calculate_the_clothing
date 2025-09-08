@@ -111,19 +111,24 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
         prune_threshold = DEFAULT_PRUNE_THRESHOLD
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
-    # ノイズ除去のためのクロージング処理
-    kernel = np.ones((5, 5), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    # 背景処理の前に衣類輪郭を抽出してマーカー用紙などの別オブジェクトを除外
     contours, _ = cv2.findContours(
         thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
-
     if not contours:
         return None, {}
-
     clothes_contour = max(contours, key=cv2.contourArea)
 
+    # 選択した輪郭のみをマスクに描画し、そこでノイズ除去を行う
+    mask = np.zeros_like(thresh)
+    cv2.drawContours(mask, [clothes_contour], -1, 255, thickness=-1)
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
     # 凸包で輪郭を滑らかにする
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    clothes_contour = max(contours, key=cv2.contourArea)
     hull = cv2.convexHull(clothes_contour)
     x, y, w, h = cv2.boundingRect(hull)
 
