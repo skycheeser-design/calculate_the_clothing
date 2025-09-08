@@ -28,7 +28,13 @@ def load_image(path):
         return cv2.imread(path)
 
 # 黒四角マーカー検出
-def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
+def detect_marker(
+    image,
+    marker_size_cm: float = 5.0,
+    debug: bool = False,
+    camera_matrix=None,
+    dist_coeffs=None,
+):
     """Detect a dark square marker and return its pixel-to-cm scale.
 
     The previous implementation relied on simple HSV thresholding with a fixed
@@ -53,6 +59,9 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     debug : bool, default ``False``
         If ``True`` the function also returns an image with visualisation of
         the detection result.
+    camera_matrix, dist_coeffs : ndarray, optional
+        Camera calibration parameters.  When both are supplied the input image
+        is undistorted via :func:`cv2.undistort` before marker detection.
 
     Returns
     -------
@@ -62,6 +71,9 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
         debug_image)`` is returned where ``debug_image`` contains drawings that
         indicate whether the marker was found.
     """
+
+    if camera_matrix is not None and dist_coeffs is not None:
+        image = cv2.undistort(image, camera_matrix, dist_coeffs)
 
     # --- Step 1: robust binarisation ------------------------------------
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -153,10 +165,10 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     if best_rect is not None:
         (cx, cy), (w, h), angle = best_rect
         box = cv2.boxPoints(best_rect)
-        box = np.intp(box)
+        box_int = np.intp(box)
 
         rect_mask = np.zeros_like(gray)
-        cv2.drawContours(rect_mask, [box], 0, 255, -1)
+        cv2.drawContours(rect_mask, [box_int], 0, 255, -1)
         inner_mean = cv2.mean(gray, mask=rect_mask)[0]
         dilated = cv2.dilate(
             rect_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
@@ -169,9 +181,25 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
 
         contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
         if contrast >= 0.25:
-            cm_per_pixel = marker_size_cm / np.mean([w, h])
+            # Perspective transform to correct for projective distortion
+            src_pts = box.astype(np.float32)
+            side_lengths = [
+                np.linalg.norm(src_pts[0] - src_pts[1]),
+                np.linalg.norm(src_pts[1] - src_pts[2]),
+                np.linalg.norm(src_pts[2] - src_pts[3]),
+                np.linalg.norm(src_pts[3] - src_pts[0]),
+            ]
+            side = int(round(np.mean(side_lengths)))
+            dst_pts = np.array(
+                [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
+                dtype=np.float32,
+            )
+            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            warped = cv2.warpPerspective(image, M, (side, side))
+            warped_side_length = warped.shape[0]
+            cm_per_pixel = marker_size_cm / warped_side_length
             if debug:
-                cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
+                cv2.drawContours(image, [box_int], 0, (0, 0, 255), 2)
                 cv2.putText(
                     image,
                     "Marker",
