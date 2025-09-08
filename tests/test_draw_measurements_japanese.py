@@ -15,8 +15,10 @@ spec.loader.exec_module(clothing)
 
 def test_draw_and_print_measurements_with_japanese_font_and_string(capfd):
     img = np.zeros((100, 200, 3), dtype=np.uint8)
-    measures = {"肩幅": 50.0, "袖タイプ": "長袖"}
-    font_path = os.getenv("JP_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    measures = {"肩幅": 50.0, "袖丈": 60.0, "備考": "テスト"}
+    font_path = os.getenv(
+        "JP_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    )
     out = clothing.draw_measurements_on_image(
         img.copy(), measures, font_path=font_path
     )
@@ -31,4 +33,5 @@ def test_draw_and_print_measurements_with_japanese_font_and_string(capfd):
             print(f"{k}: {v}")
     captured = capfd.readouterr()
     assert "肩幅: 50.0 cm" in captured.out
-    assert "袖タイプ: 長袖" in captured.out
+    assert "袖丈: 60.0 cm" in captured.out
+    assert "備考: テスト" in captured.out

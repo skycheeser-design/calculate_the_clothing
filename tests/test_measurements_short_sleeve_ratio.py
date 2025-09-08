@@ -22,12 +22,12 @@ def create_long_sleeve_image():
     return img
 
 
-def test_short_sleeve_excluded_sleeve_length():
+def test_short_sleeve_returns_sleeve_length():
     img = create_short_sleeve_image()
     contour, measures = measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
-    assert "袖丈" not in measures
-    assert measures.get("袖タイプ") == "短袖"
+    assert "袖丈" in measures
+    assert "袖タイプ" not in measures
 
 
 def test_long_sleeve_keeps_sleeve_length():
