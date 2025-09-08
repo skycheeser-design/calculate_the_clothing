@@ -227,9 +227,10 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     body_length = _shortest_path_length(
         skeleton, (center_x, top_y), (center_x, bottom_y)
     )
-    if np.isinf(body_length):
-        # Center line is disconnected; fall back to a simple top-to-bottom
-        # measurement derived from the bounding box height.
+    if not np.isfinite(body_length):
+        # Center line is disconnected or produced an undefined length; fall back
+        # to a simple top-to-bottom measurement derived from the bounding-box
+        # height so callers never receive ``inf`` or ``nan``.
         body_length = bottom_y - top_y
 
     measures = {
