@@ -3,6 +3,9 @@ import numpy as np
 from skimage.morphology import skeletonize
 
 
+SHORT_SLEEVE_RATIO_THRESHOLD = 0.35
+
+
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
     from collections import deque
@@ -223,12 +226,18 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
         skeleton, (center_x, top_y), (center_x, bottom_y)
     )
 
+    sleeve_ratio = sleeve_length / body_length if body_length else 0
+
     measures = {
         "肩幅": shoulder_width * cm_per_pixel,
         "身幅": chest_width * cm_per_pixel,
         "身丈": body_length * cm_per_pixel,
-        "袖丈": sleeve_length * cm_per_pixel,
     }
+    if sleeve_ratio >= SHORT_SLEEVE_RATIO_THRESHOLD:
+        measures["袖丈"] = sleeve_length * cm_per_pixel
+    else:
+        measures["袖タイプ"] = "短袖"
+
     return hull, measures
 
 
