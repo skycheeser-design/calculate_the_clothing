@@ -58,10 +58,18 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
 def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     """Measure key dimensions of the garment contained in ``image``.
 
+    ``cm_per_pixel`` must be a numeric value specifying the conversion from
+    pixels to centimetres. Passing ``None`` or a non-numeric value will raise
+    ``ValueError``.
+
     When the skeleton representing the garment's centre line is disconnected
     and no path can be found between top and bottom, the body length falls back
     to the bounding-box height instead of returning infinity.
     """
+
+    from numbers import Real
+    if cm_per_pixel is None or not isinstance(cm_per_pixel, Real):
+        raise ValueError("cm_per_pixel must be a numeric value")
 
     # Import lazily to avoid circular imports when :mod:`sleeve` needs
     # ``measure_clothes`` from this module.  Older installations of
