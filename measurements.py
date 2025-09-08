@@ -138,12 +138,29 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     shifted_contour = clothes_contour - [x, y]
     cv2.drawContours(mask, [shifted_contour], -1, 255, thickness=-1)
 
-    # 二値マスクから胴体中央線を推定
-    projection = mask.sum(axis=0)
-    center_x = int(np.argmax(projection))
+    # 二値マスクから胴体の重心を求め、胴体中央線を推定
+    moments = cv2.moments(mask, binaryImage=True)
+    if moments["m00"] == 0:
+        raise ValueError("Center line not found")
+    center_x = int(moments["m10"] / moments["m00"])
+    center_x = max(0, min(w - 1, center_x))
+
     column_pixels = np.where(mask[:, center_x] > 0)[0]
     if column_pixels.size == 0:
-        raise ValueError("Center line not found")
+        # 重心列に画素が存在しない場合、近傍の列を探索
+        offsets = list(range(1, w))
+        for off in offsets:
+            for sign in (-1, 1):
+                cx = center_x + off * sign
+                if 0 <= cx < w:
+                    column_pixels = np.where(mask[:, cx] > 0)[0]
+                    if column_pixels.size > 0:
+                        center_x = cx
+                        break
+            if column_pixels.size > 0:
+                break
+        if column_pixels.size == 0:
+            raise ValueError("Center line not found")
     top_y = int(column_pixels.min())
     bottom_y = int(column_pixels.max())
 
