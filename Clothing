@@ -151,12 +151,21 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
                 best_rect = rect
 
     if best_rect is not None:
-        (cx, cy), (w, h), angle = best_rect
+        (cx, cy), _, _ = best_rect
+        # ``cv2.minAreaRect`` provides the centre and dimensions of the best
+        # fitting rectangle.  Instead of trusting the width/height values
+        # directly, derive the side lengths from the corner points.  This offers
+        # slightly better numerical stability when the marker is skewed or
+        # rotated.
         box = cv2.boxPoints(best_rect)
-        box = np.intp(box)
+        side_lengths = [
+            np.linalg.norm(box[i] - box[(i + 1) % 4]) for i in range(4)
+        ]
+        avg_side_length = float(np.mean(side_lengths))
+        box_int = np.intp(box)
 
         rect_mask = np.zeros_like(gray)
-        cv2.drawContours(rect_mask, [box], 0, 255, -1)
+        cv2.drawContours(rect_mask, [box_int], 0, 255, -1)
         inner_mean = cv2.mean(gray, mask=rect_mask)[0]
         dilated = cv2.dilate(
             rect_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
@@ -169,9 +178,12 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
 
         contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
         if contrast >= 0.25:
-            cm_per_pixel = marker_size_cm / np.mean([w, h])
+            # Compute the scale using the average of the rectangle's four side
+            # lengths.  This remains accurate even when the marker appears as a
+            # rotated or perspective-distorted quadrilateral.
+            cm_per_pixel = marker_size_cm / avg_side_length
             if debug:
-                cv2.drawContours(image, [box], 0, (0, 0, 255), 2)
+                cv2.drawContours(image, [box_int], 0, (0, 0, 255), 2)
                 cv2.putText(
                     image,
                     "Marker",
