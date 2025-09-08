@@ -171,6 +171,15 @@ def detect_marker(
         # rotated.
         box = cv2.boxPoints(best_rect)
 
+        # Calculate the average side length of the rectangle from the corner
+        # points.  ``minAreaRect`` may yield width/height values that are less
+        # stable under heavy rotation or perspective distortion, whereas the
+        # Euclidean distance between successive box points remains reliable.
+        side_lengths = [
+            np.linalg.norm(box[i] - box[(i + 1) % 4]) for i in range(4)
+        ]
+        side_length = float(np.mean(side_lengths))
+
         box_int = np.intp(box)
 
         rect_mask = np.zeros_like(gray)
@@ -187,6 +196,8 @@ def detect_marker(
 
         contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
         if contrast >= 0.25:
+            if side_length > 0:
+                cm_per_pixel = marker_size_cm / side_length
 
             if debug:
                 cv2.drawContours(image, [box_int], 0, (0, 0, 255), 2)
