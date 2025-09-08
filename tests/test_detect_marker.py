@@ -123,3 +123,48 @@ def test_detect_marker_ignores_large_dark_regions():
     assert cm_per_pixel is not None
     assert abs(cm_per_pixel - 0.125) < 0.02
 
+
+def test_detect_marker_rotated_high_angle():
+    """The scale calculation should remain correct for strongly rotated markers."""
+    clothing = _load_module()
+
+    img = np.full((200, 200, 3), 255, dtype=np.uint8)
+    cv2.rectangle(img, (75, 75), (125, 125), (0, 0, 0), -1)
+
+    M = cv2.getRotationMatrix2D((100, 100), 60, 1.0)
+    img = cv2.warpAffine(
+        img, M, (200, 200), flags=cv2.INTER_LINEAR, borderValue=(255, 255, 255)
+    )
+
+    cm_per_pixel = clothing.detect_marker(img.copy(), marker_size_cm=5.0)
+
+    assert cm_per_pixel is not None
+    assert abs(cm_per_pixel - 0.1) < 0.02
+
+
+def test_detect_marker_skewed_perspective():
+    """Markers viewed under perspective skew should still yield correct scale."""
+    clothing = _load_module()
+
+    base = np.full((200, 200, 3), 255, dtype=np.uint8)
+    cv2.rectangle(base, (75, 75), (125, 125), (0, 0, 0), -1)
+
+    pts1 = np.float32([[0, 0], [200, 0], [200, 200], [0, 200]])
+    pts2 = np.float32([[0, 0], [200, 0], [170, 200], [30, 200]])
+    M = cv2.getPerspectiveTransform(pts1, pts2)
+    img = cv2.warpPerspective(base, M, (200, 200))
+
+    marker_pts = np.float32(
+        [[75, 75], [125, 75], [125, 125], [75, 125]]
+    ).reshape(-1, 1, 2)
+    warped_pts = cv2.perspectiveTransform(marker_pts, M).reshape(-1, 2)
+    side_lengths = [
+        np.linalg.norm(warped_pts[i] - warped_pts[(i + 1) % 4]) for i in range(4)
+    ]
+    expected_cpp = 5.0 / np.mean(side_lengths)
+
+    cm_per_pixel = clothing.detect_marker(img.copy(), marker_size_cm=5.0)
+
+    assert cm_per_pixel is not None
+    assert abs(cm_per_pixel - expected_cpp) < 0.03
+

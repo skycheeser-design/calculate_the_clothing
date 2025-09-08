@@ -163,8 +163,14 @@ def detect_marker(
                 best_rect = rect
 
     if best_rect is not None:
-        (cx, cy), (w, h), angle = best_rect
+        (cx, cy), _, _ = best_rect
+        # ``cv2.minAreaRect`` provides the centre and dimensions of the best
+        # fitting rectangle.  Instead of trusting the width/height values
+        # directly, derive the side lengths from the corner points.  This offers
+        # slightly better numerical stability when the marker is skewed or
+        # rotated.
         box = cv2.boxPoints(best_rect)
+
         box_int = np.intp(box)
 
         rect_mask = np.zeros_like(gray)
@@ -181,23 +187,7 @@ def detect_marker(
 
         contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
         if contrast >= 0.25:
-            # Perspective transform to correct for projective distortion
-            src_pts = box.astype(np.float32)
-            side_lengths = [
-                np.linalg.norm(src_pts[0] - src_pts[1]),
-                np.linalg.norm(src_pts[1] - src_pts[2]),
-                np.linalg.norm(src_pts[2] - src_pts[3]),
-                np.linalg.norm(src_pts[3] - src_pts[0]),
-            ]
-            side = int(round(np.mean(side_lengths)))
-            dst_pts = np.array(
-                [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
-                dtype=np.float32,
-            )
-            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            warped = cv2.warpPerspective(image, M, (side, side))
-            warped_side_length = warped.shape[0]
-            cm_per_pixel = marker_size_cm / warped_side_length
+
             if debug:
                 cv2.drawContours(image, [box_int], 0, (0, 0, 255), 2)
                 cv2.putText(
