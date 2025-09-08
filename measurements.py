@@ -59,7 +59,12 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
 
 
 def measure_clothes(image, cm_per_pixel, prune_threshold=None):
-    """Measure key dimensions of the garment contained in ``image``."""
+    """Measure key dimensions of the garment contained in ``image``.
+
+    When the skeleton representing the garment's centre line is disconnected
+    and no path can be found between top and bottom, the body length falls back
+    to the bounding-box height instead of returning infinity.
+    """
 
     # Import lazily to avoid circular imports when :mod:`sleeve` needs
     # ``measure_clothes`` from this module.  Older installations of
@@ -225,6 +230,10 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     body_length = _shortest_path_length(
         skeleton, (center_x, top_y), (center_x, bottom_y)
     )
+    if np.isinf(body_length):
+        # Center line is disconnected; fall back to a simple top-to-bottom
+        # measurement derived from the bounding box height.
+        body_length = bottom_y - top_y
 
     sleeve_ratio = sleeve_length / body_length if body_length else 0
 
