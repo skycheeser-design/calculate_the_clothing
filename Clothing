@@ -86,12 +86,14 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     # --- Step 2: morphological noise removal ----------------------------
     # ``np.ones`` would also work here, but ``getStructuringElement`` makes the
     # intent explicit and allows different shapes to be experimented with in
-    # the future.  Opening followed by closing eliminates isolated pixels and
-    # fills tiny holes.  A final median blur further smooths salt-and-pepper
-    # noise that occasionally survives the morphological operations.
+    # the future.  Opening removes isolated speckles.  A light erosion is then
+    # applied before closing to ensure that neighbouring dark regions are not
+    # merged with the marker.  Finally a median blur smooths remaining noise.
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    mask = cv2.erode(mask, kernel, iterations=1)  # keep marker separate
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    mask = cv2.dilate(mask, kernel, iterations=1)
     mask = cv2.medianBlur(mask, 3)
 
     # --- Step 3: contour analysis ---------------------------------------
@@ -139,7 +141,11 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
                 cv2.mean(gray, mask=ring_mask)[0] if ring_pixels > 0 else 255
             )
 
-            if outer_mean - inner_mean >= 20 and rect_area > max_area:
+            # Compare contrast relative to the surrounding area instead of using
+            # a fixed absolute threshold.  This makes detection work even on
+            # darker backgrounds where ``outer_mean`` may be small.
+            contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
+            if contrast >= 0.25 and rect_area > max_area:
                 max_area = rect_area
                 best_rect = rect
 
@@ -160,7 +166,8 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
             cv2.mean(gray, mask=ring_mask)[0] if ring_pixels > 0 else 255
         )
 
-        if outer_mean - inner_mean >= 20:
+        contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
+        if contrast >= 0.25:
             cm_per_pixel = marker_size_cm / np.mean([w, h])
             if debug:
                 cv2.drawContours(image, [box], 0, (0, 0, 255), 2)

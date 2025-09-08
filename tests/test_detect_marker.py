@@ -21,7 +21,7 @@ def _load_module():
     return module
 
 
-@pytest.mark.parametrize("bg_color, angle", [(255, 0), (120, 0), (255, 45), (120, 30)])
+@pytest.mark.parametrize("bg_color, angle", [(255, 0), (120, 0), (0, 0), (255, 45), (120, 30)])
 def test_detect_marker_various_conditions(bg_color, angle):
     clothing = _load_module()
 
