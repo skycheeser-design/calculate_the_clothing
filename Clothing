@@ -28,7 +28,13 @@ def load_image(path):
         return cv2.imread(path)
 
 # 黒四角マーカー検出
-def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
+def detect_marker(
+    image,
+    marker_size_cm: float = 5.0,
+    debug: bool = False,
+    camera_matrix=None,
+    dist_coeffs=None,
+):
     """Detect a dark square marker and return its pixel-to-cm scale.
 
     The previous implementation relied on simple HSV thresholding with a fixed
@@ -53,6 +59,9 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
     debug : bool, default ``False``
         If ``True`` the function also returns an image with visualisation of
         the detection result.
+    camera_matrix, dist_coeffs : ndarray, optional
+        Camera calibration parameters.  When both are supplied the input image
+        is undistorted via :func:`cv2.undistort` before marker detection.
 
     Returns
     -------
@@ -62,6 +71,9 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
         debug_image)`` is returned where ``debug_image`` contains drawings that
         indicate whether the marker was found.
     """
+
+    if camera_matrix is not None and dist_coeffs is not None:
+        image = cv2.undistort(image, camera_matrix, dist_coeffs)
 
     # --- Step 1: robust binarisation ------------------------------------
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -158,10 +170,7 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
         # slightly better numerical stability when the marker is skewed or
         # rotated.
         box = cv2.boxPoints(best_rect)
-        side_lengths = [
-            np.linalg.norm(box[i] - box[(i + 1) % 4]) for i in range(4)
-        ]
-        avg_side_length = float(np.mean(side_lengths))
+
         box_int = np.intp(box)
 
         rect_mask = np.zeros_like(gray)
@@ -178,10 +187,7 @@ def detect_marker(image, marker_size_cm: float = 5.0, debug: bool = False):
 
         contrast = (outer_mean - inner_mean) / max(outer_mean, 1)
         if contrast >= 0.25:
-            # Compute the scale using the average of the rectangle's four side
-            # lengths.  This remains accurate even when the marker appears as a
-            # rotated or perspective-distorted quadrilateral.
-            cm_per_pixel = marker_size_cm / avg_side_length
+
             if debug:
                 cv2.drawContours(image, [box_int], 0, (0, 0, 255), 2)
                 cv2.putText(
