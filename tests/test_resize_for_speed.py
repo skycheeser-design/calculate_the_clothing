@@ -14,3 +14,11 @@ def test_resize_for_speed_scales_and_adjusts():
     assert max(resized.shape[:2]) == 1200
     expected_cpp = 2.0 / (1200 / 2000)
     assert abs(cpp - expected_cpp) < 1e-6
+
+
+def test_resize_for_speed_none_cm_per_pixel():
+    """When ``cm_per_pixel`` is ``None`` the value is propagated unchanged."""
+    img = np.zeros((2000, 1000, 3), dtype=np.uint8)
+    resized, cpp = clothing.resize_for_speed(img, cm_per_pixel=None, max_size=1200)
+    assert max(resized.shape[:2]) == 1200
+    assert cpp is None

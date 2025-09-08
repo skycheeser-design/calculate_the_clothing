@@ -260,8 +260,9 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
     ----------
     image : numpy.ndarray
         Input BGR image.
-    cm_per_pixel : float
-        Conversion factor from pixels to centimeters at the current scale.
+    cm_per_pixel : float or None
+        Conversion factor from pixels to centimeters at the current scale. If
+        ``None``, the value is propagated unchanged.
     max_size : int, optional
         Target size for the longest side. Images smaller than this are
         returned unchanged. Defaults to ``1200``.
@@ -271,7 +272,8 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
     tuple
         ``(resized_image, adjusted_cm_per_pixel)`` where the scale factor is
         applied equally to both dimensions and ``cm_per_pixel`` is divided by
-        that factor so real-world measurements remain accurate.
+        that factor so real-world measurements remain accurate. If
+        ``cm_per_pixel`` is ``None``, ``None`` is returned unchanged.
     """
 
     h, w = image.shape[:2]
@@ -283,6 +285,8 @@ def resize_for_speed(image, cm_per_pixel, max_size=1200):
     resized = cv2.resize(
         image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA
     )
+    if cm_per_pixel is None:
+        return resized, None
     return resized, cm_per_pixel / scale
 
 
