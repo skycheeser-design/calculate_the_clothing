@@ -228,7 +228,16 @@ def detect_marker(
 
 # 背景除去
 def remove_background(image, max_size=None):
-    """Remove the background from ``image`` using a cached rembg session.
+    """Remove the background from ``image`` using :mod:`rembg` to obtain a
+    clean mask and return a BGR image with a fully black background.
+
+    The original implementation relied on ``rembg`` directly returning an
+    image with an alpha channel.  Some versions of the library however produce
+    slightly fuzzy masks which results in small leftover blobs around the
+    garment.  The revised function therefore requests the mask from
+    ``rembg`` (``only_mask=True``), performs additional morphological
+    filtering and finally composites the original BGR pixels onto a black
+    canvas via :func:`cv2.copyTo`.
 
     Parameters
     ----------
@@ -236,9 +245,9 @@ def remove_background(image, max_size=None):
         BGR image to process.
     max_size : int, optional
         If given, the image is scaled so that its longest side equals
-        ``max_size`` pixels before calling :func:`rembg.remove`. The result is
-        then resized back to the original resolution so subsequent measurement
-        code can operate on the original scale.
+        ``max_size`` pixels before calling :func:`rembg.remove`. The mask is
+        resized back to the original resolution so subsequent measurement code
+        can operate on the original scale.
     """
 
     if rembg is None or session is None:
@@ -247,19 +256,40 @@ def remove_background(image, max_size=None):
     orig_h, orig_w = image.shape[:2]
 
     scale = 1.0
+    image_resized = image
     if max_size is not None:
         longest = max(orig_h, orig_w)
         if longest > max_size:
             scale = max_size / float(longest)
             new_w = int(orig_w * scale)
             new_h = int(orig_h * scale)
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            image_resized = cv2.resize(
+                image, (new_w, new_h), interpolation=cv2.INTER_AREA
+            )
 
-    result = rembg.remove(image, session=session)
-    result = cv2.cvtColor(np.array(result), cv2.COLOR_RGBA2BGR)
+    # ``rembg`` is invoked twice with ``only_mask=True`` as requested.  The
+    # first call acts as a warm-up and the second provides the mask used for
+    # further processing.
+    rembg.remove(image_resized, session=session, only_mask=True)
+    mask = rembg.remove(image_resized, session=session, only_mask=True)
+    mask = np.array(mask)
+    if mask.ndim == 3:
+        mask = mask[:, :, 0]
+
+    # Binarise and remove small fragments from the mask.
+    _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
     if scale != 1.0:
-        result = cv2.resize(result, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+        mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+        image_resized = cv2.resize(
+            image_resized, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
+        )
+
+    # Composite the garment on a black background using the cleaned mask.
+    result = cv2.copyTo(image_resized, mask)
 
     return result
 
