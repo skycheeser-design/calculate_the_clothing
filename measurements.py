@@ -58,6 +58,20 @@ def _refine_grabcut(bgr, init_mask):
     return mask
 # -----------------------------------------------------------------------
 
+
+def _largest_component(mask: np.ndarray) -> np.ndarray:
+    """Return a copy of ``mask`` containing only its largest connected component."""
+
+    num_labels, labels, stats, _centroids = cv2.connectedComponentsWithStats(mask)
+    if num_labels <= 1:
+        return mask.copy()
+
+    largest = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+    cleaned = np.zeros_like(mask)
+    cleaned[labels == largest] = 255
+    return cleaned
+# -----------------------------------------------------------------------
+
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
     from collections import deque
@@ -110,17 +124,35 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     return left_points, right_points
 
 
-def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0):
+def measure_clothes(
+    image,
+    cm_per_pixel,
+    prune_threshold=None,
+    smooth_factor=1.0,
+    vertical_kernel_size=None,
+    horizontal_kernel_size=None,
+    debug=False,
+):
     """Measure key dimensions of the garment contained in ``image``.
 
     ``cm_per_pixel`` must be a numeric value specifying the conversion from
     pixels to centimetres. Passing ``None`` or a non-numeric value will raise
     ``ValueError``.
 
-    ``smooth_factor`` adjusts the strength of the morphological operations used
-    to remove small concavities. ``1.0`` reproduces the previous behaviour,
-    smaller values preserve more detail and ``0`` disables the smoothing steps
-    entirely.
+    ``smooth_factor`` controls the size of the morphological kernels used to
+    tidy up the torso mask: larger values use bigger kernels which smooth the
+    contour more aggressively while smaller values preserve fine detail. ``0``
+    disables these smoothing steps entirely.
+
+    ``vertical_kernel_size`` and ``horizontal_kernel_size`` override the default
+    kernel dimensions derived from ``smooth_factor``. The vertical kernel height
+    affects how strongly small vertical concavities are removed whereas the
+    horizontal kernel width determines how aggressively sleeves are separated
+    from the torso, allowing fine-grained control over contour fidelity.
+
+    When ``debug`` is ``True`` diagnostic images of the intermediate masks and
+    contour detection results are written to the current working directory so
+    segmentation issues can be inspected visually.
 
     When the skeleton representing the garment's centre line is disconnected
     and no path can be found between top and bottom, the body length falls back
@@ -180,9 +212,18 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0
     # --- ここから置き換え（切り抜き強化） ---
     # 1) 初期マスク（照明補正 + Otsu/適応 + abクラスタ + エッジ補強）
     init = _initial_mask(image)
+    if debug:
+        cv2.imwrite("debug_init_mask.png", init)
 
     # 2) GrabCut で境界を微修正
     mask = _refine_grabcut(image, init)
+    if debug:
+        cv2.imwrite("debug_refined_mask.png", mask)
+
+    # Remove small components – keep only largest
+    mask = _largest_component(mask)
+    if debug:
+        cv2.imwrite("debug_clean_mask.png", mask)
 
     # 3) 凸包とROIを作りつつ、以降の処理に渡す
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -190,6 +231,10 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0
         raise ValueError("Clothes contour not found")
 
     clothes_contour = max(contours, key=cv2.contourArea)
+    if debug:
+        dbg = image.copy()
+        cv2.drawContours(dbg, [clothes_contour], -1, (0, 255, 0), 2)
+        cv2.imwrite("debug_contours.png", dbg)
     hull = cv2.convexHull(clothes_contour)
     x, y, w, h = cv2.boundingRect(hull)
 
@@ -254,8 +299,12 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
     # 身幅：胴体の25%〜50%の範囲を探索し、中心線と連結した領域のみを測定
-    if smooth_factor > 0:
-        kernel_size = max(3, int((height // 10) * smooth_factor))
+    if smooth_factor > 0 or vertical_kernel_size is not None or horizontal_kernel_size is not None:
+        kernel_size = (
+            vertical_kernel_size
+            if vertical_kernel_size is not None
+            else max(3, int((height // 10) * smooth_factor))
+        )
         vertical_kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (3, kernel_size)
         )
@@ -264,7 +313,11 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0
 
         # 袖を胴体から切り離すために横方向に細長いカーネルでエロージョンを実施。
         # ここでは一度細く削って連結成分を抽出した後、必要部分のみを復元する。
-        horiz_size = max(3, int((w // 8) * smooth_factor))
+        horiz_size = (
+            horizontal_kernel_size
+            if horizontal_kernel_size is not None
+            else max(3, int((w // 8) * smooth_factor))
+        )
         horizontal_kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (horiz_size, 3)
         )
