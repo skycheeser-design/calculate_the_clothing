@@ -2,6 +2,10 @@ import cv2
 import numpy as np
 from skimage.morphology import skeletonize
 
+
+class NoGarmentDetectedError(RuntimeError):
+    """Raised when the foreground region resembles paper rather than clothing."""
+
 # ---- 追加：照明補正・初期マスク・GrabCutリファイン -----------------
 def _illum_correction(gray):
     bg = cv2.GaussianBlur(gray, (0, 0), 21)           # 大きめσで背景近似
@@ -71,6 +75,42 @@ def _largest_component(mask: np.ndarray) -> np.ndarray:
     cleaned[labels == largest] = 255
     return cleaned
 # -----------------------------------------------------------------------
+
+
+def _is_paper_like(image, mask, contour) -> bool:
+    """Return ``True`` if the masked region is likely just a piece of paper.
+
+    The heuristic checks three simple measures:
+
+    * Edge density inside the mask.  Clothing typically contains folds or
+      texture, whereas paper has very few internal edges.
+    * Colour variance of the masked pixels.  Paper tends to be nearly uniform.
+    * Rectangularity – ratio of contour area to its bounding-box area.  Paper
+      is usually close to a perfect rectangle.
+
+    The thresholds are deliberately conservative so normal garments are not
+    misclassified.
+    """
+
+    x, y, w, h = cv2.boundingRect(contour)
+    if w == 0 or h == 0:
+        return False
+    roi = image[y : y + h, x : x + w]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    roi_mask = mask[y : y + h, x : x + w] > 0
+    area = int(np.count_nonzero(roi_mask))
+    if area == 0:
+        return False
+
+    edges = cv2.Canny(gray, 50, 150)
+    edge_density = np.count_nonzero(edges[roi_mask]) / area
+
+    colour_var = float(np.var(gray[roi_mask]))
+    rectangularity = cv2.contourArea(contour) / float(w * h)
+
+    if rectangularity > 0.95 and edge_density < 0.03 and colour_var < 100:
+        return True
+    return False
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
@@ -157,6 +197,12 @@ def measure_clothes(
     When the skeleton representing the garment's centre line is disconnected
     and no path can be found between top and bottom, the body length falls back
     to the bounding-box height instead of returning infinity.
+
+    Raises
+    ------
+    NoGarmentDetectedError
+        If the segmented foreground resembles a plain sheet of paper rather
+        than an actual garment.
     """
 
     from numbers import Real
@@ -231,6 +277,10 @@ def measure_clothes(
         raise ValueError("Clothes contour not found")
 
     clothes_contour = max(contours, key=cv2.contourArea)
+
+    if _is_paper_like(image, mask, clothes_contour):
+        raise NoGarmentDetectedError("No garment detected")
+
     if debug:
         dbg = image.copy()
         cv2.drawContours(dbg, [clothes_contour], -1, (0, 255, 0), 2)
@@ -408,4 +458,4 @@ def measure_clothes(
     return hull, measures
 
 
-__all__ = ["measure_clothes", "_split_sleeve_points"]
+__all__ = ["measure_clothes", "_split_sleeve_points", "NoGarmentDetectedError"]
