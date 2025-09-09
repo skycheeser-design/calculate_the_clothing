@@ -2,6 +2,61 @@ import cv2
 import numpy as np
 from skimage.morphology import skeletonize
 
+# ---- 追加：照明補正・初期マスク・GrabCutリファイン -----------------
+def _illum_correction(gray):
+    bg = cv2.GaussianBlur(gray, (0, 0), 21)           # 大きめσで背景近似
+    corr = cv2.addWeighted(gray, 1.0, bg, -1.0, 128)  # gray - bg + 128
+    return np.clip(corr, 0, 255).astype(np.uint8)
+
+def _initial_mask(bgr):
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    L, A, B = cv2.split(lab)
+    Lc = _illum_correction(L)
+
+    # Otsu + 適応しきい値（局所）
+    _, m1 = cv2.threshold(Lc, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    m2 = cv2.adaptiveThreshold(
+        Lc, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 5
+    )
+    m = cv2.bitwise_or(m1, m2)
+
+    # a,b の K-means で2クラスタ化→Otsuマスクと重なる方を採用
+    ab = np.float32(np.dstack([A, B]).reshape(-1, 2))
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+    _, labels, _ = cv2.kmeans(ab, 2, None, criteria, 1, cv2.KMEANS_PP_CENTERS)
+    labels = labels.reshape(A.shape)
+    k0 = (labels == 0).astype(np.uint8) * 255
+    k1 = (labels == 1).astype(np.uint8) * 255
+    overlap0 = cv2.countNonZero(cv2.bitwise_and(k0, m))
+    overlap1 = cv2.countNonZero(cv2.bitwise_and(k1, m))
+    k = k0 if overlap0 >= overlap1 else k1
+
+    # エッジ補強
+    edges = cv2.Canny(Lc, 50, 150)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), 1)
+
+    init = cv2.bitwise_and(m, k)
+    init = cv2.bitwise_or(init, edges)
+    return init
+
+def _refine_grabcut(bgr, init_mask):
+    # 0:確BG, 2:不確BG, 3:不確FG, 1:確FG
+    gc_mask = np.full(init_mask.shape, cv2.GC_PR_BGD, np.uint8)
+    gc_mask[init_mask > 0] = cv2.GC_PR_FGD
+    core = cv2.erode(init_mask, np.ones((7, 7), np.uint8), 1)
+    gc_mask[core > 0] = cv2.GC_FGD
+
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
+    cv2.grabCut(bgr, gc_mask, None, bgdModel, fgdModel, 3, cv2.GC_INIT_WITH_MASK)
+    mask = np.where(
+        (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
+    ).astype(np.uint8)
+    # 小穴埋め & 端スパー除去
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
+    return mask
+# -----------------------------------------------------------------------
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     """Split ``skeleton`` into left/right sleeve points via flood fill."""
@@ -117,46 +172,39 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
 
     if prune_threshold is None:
         prune_threshold = DEFAULT_PRUNE_THRESHOLD
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+    # --- ここから置き換え（切り抜き強化） ---
+    # 1) 初期マスク（照明補正 + Otsu/適応 + abクラスタ + エッジ補強）
+    init = _initial_mask(image)
 
-    kernel = np.ones((3, 3), np.uint8)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    # 2) GrabCut で境界を微修正
+    mask = _refine_grabcut(image, init)
 
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(thresh)
-    # 最大成分を基準にしつつ、1% 未満の面積を持つ成分を除外
-    largest = stats[1:, cv2.CC_STAT_AREA].max()
-    mask_clean = np.zeros_like(thresh)
-    for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] >= largest * 0.01:
-            mask_clean[labels == i] = 255
-    thresh = mask_clean
-
-    # 背景処理の前に衣類輪郭を抽出してマーカー用紙などの別オブジェクトを除外
-    contours, _ = cv2.findContours(
-        mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    if not contours:
-        return None, {}
-    clothes_contour = max(contours, key=cv2.contourArea)
-
-    # 選択した輪郭のみをマスクに描画し、そこでノイズ除去を行う
-    mask = np.zeros_like(thresh)
-    cv2.drawContours(mask, [clothes_contour], -1, 255, thickness=-1)
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-    # 凸包で輪郭を滑らかにする
+    # 3) 凸包とROIを作りつつ、以降の処理に渡す
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        raise ValueError("Clothes contour not found")
+
     clothes_contour = max(contours, key=cv2.contourArea)
     hull = cv2.convexHull(clothes_contour)
     x, y, w, h = cv2.boundingRect(hull)
 
-    # ROIに切り出し後のマスクを作成
+    # ROIへ切り出し（従来通り）
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = gray[y:y + h, x:x + w]
     mask = np.zeros((h, w), dtype=np.uint8)
     shifted_contour = clothes_contour - [x, y]
     cv2.drawContours(mask, [shifted_contour], -1, 255, thickness=-1)
+    # --- 置き換えここまで ---
+        # --- マスク健全性チェック（任意） ---
+    area = cv2.countNonZero(mask)
+    if area < (mask.shape[0] * mask.shape[1]) * 0.02:
+        raise ValueError("Mask area too small (possible segmentation failure)")
+
+    # 輪郭がギザギザすぎないか（周長/面積）
+    perim = cv2.arcLength(cv2.approxPolyDP(clothes_contour, 2.0, True), True)
+    if perim / max(area, 1) > 0.2:
+        # しきい値は環境で調整。大きいほどギザギザ→背景ノイズ多め
+        pass  # 必要ならフォールバックや再試行ロジックをここに
 
     # 二値マスクから胴体の重心を求め、胴体中央線を推定
     moments = cv2.moments(mask, binaryImage=True)
@@ -290,4 +338,3 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
 
 
 __all__ = ["measure_clothes", "_split_sleeve_points"]
-
