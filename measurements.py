@@ -334,18 +334,19 @@ def measure_clothes(
 
     height = bottom_y - top_y
 
-    # 肩幅（上から10%の位置での幅）
-    shoulder_y = top_y + int(height * 0.1)
-    shoulder_line = mask[shoulder_y:shoulder_y + 5, :]
-    shoulder_points = cv2.findNonZero(shoulder_line)
-    if shoulder_points is None:
+    # 肩幅：上部輪郭から肩のピークを推定し、幅を計測
+    upper_limit = top_y + int(height * 0.25)
+    contour_points = clothes_contour[:, 0, :]
+    upper_points = contour_points[contour_points[:, 1] <= upper_limit]
+    if upper_points.shape[0] < 2:
         raise ValueError("Shoulder line not detected")
-    shoulder_xs = shoulder_points[:, 0, 0]
-    shoulder_ys = shoulder_points[:, 0, 1]
-    left_idx = np.argmin(shoulder_xs)
-    right_idx = np.argmax(shoulder_xs)
-    left_shoulder = (shoulder_xs[left_idx], shoulder_y + shoulder_ys[left_idx])
-    right_shoulder = (shoulder_xs[right_idx], shoulder_y + shoulder_ys[right_idx])
+    diff = upper_points[:, None, :] - upper_points[None, :, :]
+    dist_sq = np.sum(diff * diff, axis=2)
+    i, j = np.unravel_index(np.argmax(dist_sq), dist_sq.shape)
+    left_shoulder = tuple(upper_points[i])
+    right_shoulder = tuple(upper_points[j])
+    if left_shoulder[0] > right_shoulder[0]:
+        left_shoulder, right_shoulder = right_shoulder, left_shoulder
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
     # 身幅：胴体の25%〜50%の範囲を探索し、中心線と連結した領域のみを測定
