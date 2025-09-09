@@ -120,9 +120,21 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
 
+    kernel = np.ones((3, 3), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(thresh)
+    # 最大成分を基準にしつつ、1% 未満の面積を持つ成分を除外
+    largest = stats[1:, cv2.CC_STAT_AREA].max()
+    mask_clean = np.zeros_like(thresh)
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= largest * 0.01:
+            mask_clean[labels == i] = 255
+    thresh = mask_clean
+
     # 背景処理の前に衣類輪郭を抽出してマーカー用紙などの別オブジェクトを除外
     contours, _ = cv2.findContours(
-        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     if not contours:
         return None, {}
