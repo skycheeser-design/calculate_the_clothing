@@ -161,6 +161,32 @@ def _select_garment_contour(image_bgr, mask_bin):
 # -----------------------------------------------------------------------
 
 
+def _is_paper_like(image_bgr, mask_bin, contour):
+    """Return ``True`` if the contour resembles a plain sheet of paper.
+
+    A region is considered paper-like when it is almost perfectly rectangular,
+    lacks visible texture and occupies a large portion of the frame. Such
+    regions are likely background elements (e.g. calibration paper) rather than
+    garments.
+    """
+
+    x, y, w, h = cv2.boundingRect(contour)
+    area = cv2.contourArea(contour)
+    rect_area = float(w * h) or 1.0
+    rectangularity = area / rect_area
+
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    roi = gray[y : y + h, x : x + w]
+    roi_mask = mask_bin[y : y + h, x : x + w] > 0
+    lap_var = _laplacian_var(roi, roi_mask)
+
+    H, W = mask_bin.shape[:2]
+    coverage = area / float(H * W)
+
+    return rectangularity > 0.95 and lap_var < 5.0 and coverage > 0.6
+# -----------------------------------------------------------------------
+
+
 # ---- 穏やかなスムージング（形状保持。凸包は使わない） ------------
 def _smooth_mask_keep_shape(mask):
     m = cv2.medianBlur(mask, 5)
