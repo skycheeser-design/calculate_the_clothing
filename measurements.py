@@ -26,8 +26,8 @@ def _initial_mask(bgr):
 
     # a,b の K-means で2クラスタ化→Otsuマスクと重なる方を採用
     ab = np.float32(np.dstack([A, B]).reshape(-1, 2))
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-    _, labels, _ = cv2.kmeans(ab, 2, None, criteria, 1, cv2.KMEANS_PP_CENTERS)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 1.0)
+    _, labels, _ = cv2.kmeans(ab, 2, None, criteria, 5, cv2.KMEANS_PP_CENTERS)
     labels = labels.reshape(A.shape)
     k0 = (labels == 0).astype(np.uint8) * 255
     k1 = (labels == 1).astype(np.uint8) * 255
@@ -41,6 +41,8 @@ def _initial_mask(bgr):
 
     init = cv2.bitwise_and(m, k)
     init = cv2.bitwise_or(init, edges)
+    init = cv2.morphologyEx(init, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    init = cv2.morphologyEx(init, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
     return init
 
 def _refine_grabcut(bgr, init_mask):
