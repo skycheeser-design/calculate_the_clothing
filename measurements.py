@@ -455,7 +455,10 @@ def measure_clothes(
         "袖丈": sleeve_length * cm_per_pixel,
     }
 
-    return hull, measures
+    # ``hull`` is still used internally for deriving the bounding-box but the
+    # function now returns the original ``clothes_contour`` so callers can work
+    # with the precise garment outline rather than its convex hull.
+    return clothes_contour, measures
 
 
 __all__ = ["measure_clothes", "_split_sleeve_points", "NoGarmentDetectedError"]
