@@ -110,12 +110,17 @@ def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
     return left_points, right_points
 
 
-def measure_clothes(image, cm_per_pixel, prune_threshold=None):
+def measure_clothes(image, cm_per_pixel, prune_threshold=None, smooth_factor=1.0):
     """Measure key dimensions of the garment contained in ``image``.
 
     ``cm_per_pixel`` must be a numeric value specifying the conversion from
     pixels to centimetres. Passing ``None`` or a non-numeric value will raise
     ``ValueError``.
+
+    ``smooth_factor`` adjusts the strength of the morphological operations used
+    to remove small concavities. ``1.0`` reproduces the previous behaviour,
+    smaller values preserve more detail and ``0`` disables the smoothing steps
+    entirely.
 
     When the skeleton representing the garment's centre line is disconnected
     and no path can be found between top and bottom, the body length falls back
@@ -249,33 +254,46 @@ def measure_clothes(image, cm_per_pixel, prune_threshold=None):
     shoulder_width = right_shoulder[0] - left_shoulder[0]
 
     # 身幅：胴体の25%〜50%の範囲を探索し、中心線と連結した領域のみを測定
-    kernel_size = max(3, height // 10)
-    vertical_kernel = np.ones((kernel_size, 1), np.uint8)
-    torso_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, vertical_kernel)
-    torso_mask = cv2.morphologyEx(torso_mask, cv2.MORPH_CLOSE, vertical_kernel)
+    if smooth_factor > 0:
+        kernel_size = max(3, int((height // 10) * smooth_factor))
+        vertical_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (3, kernel_size)
+        )
+        torso_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, vertical_kernel)
+        torso_mask = cv2.morphologyEx(torso_mask, cv2.MORPH_CLOSE, vertical_kernel)
 
-    # 袖を胴体から切り離すために横方向に細長いカーネルでエロージョンを実施。
-    # ここでは一度細く削って連結成分を抽出した後、必要部分のみを復元する。
-    horiz_size = max(3, w // 8)
-    horizontal_kernel = np.ones((1, horiz_size), np.uint8)
-    torso_eroded = cv2.erode(torso_mask, horizontal_kernel, iterations=1)
+        # 袖を胴体から切り離すために横方向に細長いカーネルでエロージョンを実施。
+        # ここでは一度細く削って連結成分を抽出した後、必要部分のみを復元する。
+        horiz_size = max(3, int((w // 8) * smooth_factor))
+        horizontal_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (horiz_size, 3)
+        )
+        torso_eroded = cv2.erode(torso_mask, horizontal_kernel, iterations=1)
 
-    # 中央列と連結している領域のみを残す。袖が裾付近で胴体と繋がって
-    # しまうと身幅が過大に測定されるため、胴体の下部 40% を一時的に
-    # 無視して連結成分を抽出する。
-    torso_mask_cc = torso_eroded.copy()
-    bottom_cut = top_y + int(height * 0.6)
-    torso_mask_cc[bottom_cut:, :] = 0
-    num_labels, labels, _stats, _centroids = cv2.connectedComponentsWithStats(torso_mask_cc)
-    center_rel = center_x
-    center_labels = np.unique(labels[:, center_rel])
-    torso_only = np.zeros_like(torso_eroded)
-    for lbl in center_labels:
-        if lbl == 0:
-            continue
-        torso_only[labels == lbl] = 255
-    # 抽出した胴体領域のみを元の太さに戻すためダイレーション
-    torso_mask = cv2.dilate(torso_only, horizontal_kernel, iterations=1)
+        # 中央列と連結している領域のみを残す。袖が裾付近で胴体と繋がって
+        # しまうと身幅が過大に測定されるため、胴体の下部 40% を一時的に
+        # 無視して連結成分を抽出する。
+        torso_mask_cc = torso_eroded.copy()
+        bottom_cut = top_y + int(height * 0.6)
+        torso_mask_cc[bottom_cut:, :] = 0
+        num_labels, labels, _stats, _centroids = cv2.connectedComponentsWithStats(
+            torso_mask_cc
+        )
+        center_rel = center_x
+        center_labels = np.unique(labels[:, center_rel])
+        torso_only = np.zeros_like(torso_eroded)
+        for lbl in center_labels:
+            if lbl == 0:
+                continue
+            torso_only[labels == lbl] = 255
+        # 抽出した胴体領域のみを元の太さに戻すためダイレーション
+        restore_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (max(3, horiz_size // 2), 3)
+        )
+        torso_mask = cv2.dilate(torso_only, restore_kernel, iterations=1)
+    else:
+        torso_mask = mask.copy()
+        center_rel = center_x
 
     widths = []
     start_y = int(top_y + height * 0.25)
