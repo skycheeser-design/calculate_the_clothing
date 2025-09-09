@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
 import numbers
-from measurements import measure_clothes
+from measurements import measure_clothes, NoGarmentDetectedError
 try:
     import pillow_heif
 except ImportError:  # pragma: no cover

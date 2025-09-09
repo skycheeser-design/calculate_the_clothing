@@ -2,8 +2,9 @@ import os
 import importlib.util
 import numpy as np
 import cv2
+import pytest
 from sleeve import compute_sleeve_length
-from measurements import _split_sleeve_points
+from measurements import _split_sleeve_points, NoGarmentDetectedError
 
 # Load Clothing module from the script without extension
 MODULE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Clothing')
@@ -124,5 +125,12 @@ def test_measure_clothes_chest_width_ignores_outlier():
     contour, measures = clothing.measure_clothes(img, cm_per_pixel=1.0)
     assert contour is not None
     assert abs(measures["身幅"] - 40) < 1.0
+
+
+def test_measure_clothes_rejects_paper():
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    cv2.rectangle(img, (20, 20), (180, 180), (255, 255, 255), -1)
+    with pytest.raises(NoGarmentDetectedError):
+        clothing.measure_clothes(img, cm_per_pixel=1.0)
 
 
