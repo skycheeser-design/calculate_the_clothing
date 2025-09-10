@@ -68,9 +68,12 @@ def _refine_grabcut(bgr, init_mask):
     mask = np.where(
         (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
     ).astype(np.uint8)
-    # 小穴埋め & 端スパー除去
+    # 小穴埋め & 境界維持（粒ノイズ除去は ``_smooth_mask_keep_shape`` へ委ねる）
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
+    # MORPH_OPEN shrinks the garment outline and can eat sleeve edges.
+    # Keep boundaries by dilating and delegate noise removal to
+    # ``_smooth_mask_keep_shape`` which performs gentle opening.
+    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8))
     return mask
 # -----------------------------------------------------------------------
 
