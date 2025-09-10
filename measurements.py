@@ -194,6 +194,7 @@ def _smooth_mask_keep_shape(mask):
     ell3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, ell5)  # 小穴埋め
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN,  ell3)  # 粒ノイズ除去
+    m = cv2.dilate(m, ell3, 1)  # 開処理で削られた境界を少し復元
     return m
 # -----------------------------------------------------------------------
 
