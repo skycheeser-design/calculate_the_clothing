@@ -25,6 +25,7 @@ def _initial_mask(bgr):
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
     L, A, B = cv2.split(lab)
     Lc = _illum_correction(L)
+    Lc = cv2.normalize(Lc, None, 0, 255, cv2.NORM_MINMAX)
 
     # Otsu + 適応しきい値（局所）
     _, m1 = cv2.threshold(Lc, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -45,11 +46,11 @@ def _initial_mask(bgr):
     k = k0 if overlap0 >= overlap1 else k1
 
     # 服マスク近傍のエッジ補強
-    edges = cv2.Canny(Lc, 50, 150)
-    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), 1)
+    edges = cv2.Canny(Lc, 100, 200)
 
     init = cv2.bitwise_and(m, k)
     init = cv2.bitwise_or(init, edges)
+    init = cv2.dilate(init, np.ones((3, 3), np.uint8), 1)
     init = cv2.morphologyEx(init, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     init = cv2.morphologyEx(init, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
     return init
