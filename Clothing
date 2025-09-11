@@ -226,6 +226,30 @@ def detect_marker(
 
     return (cm_per_pixel, image) if debug else cm_per_pixel
 
+# GrabCut による輪郭スナップ
+def snap_mask_to_edges(bgr, coarse_mask, band_px=8, iters=4):
+    """
+    coarse_mask（0/255）を出発点に、周囲 band_px の帯域だけを未知にして
+    GrabCut を再実行。輪郭を実エッジへ“スナップ”させる。
+    戻り値：0/255 の精密マスク
+    """
+    m = (coarse_mask > 0).astype(np.uint8) * 255
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band_px + 1, 2 * band_px + 1))
+    sure_fg = cv2.erode(m, k, iterations=1)
+    sure_bg = cv2.dilate(m, k, iterations=1)
+    sure_bg = cv2.bitwise_not(sure_bg)
+
+    gc_mask = np.full(m.shape, cv2.GC_PR_BGD, np.uint8)
+    gc_mask[sure_bg > 0] = cv2.GC_BGD
+    gc_mask[sure_fg > 0] = cv2.GC_FGD
+
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
+    cv2.grabCut(bgr, gc_mask, None, bgdModel, fgdModel, iters, cv2.GC_INIT_WITH_MASK)
+
+    out = np.where((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
+    return out
+
 # 背景除去
 def remove_background(image, max_size=None):
     """Remove the background from ``image`` using :mod:`rembg` to obtain a
@@ -276,11 +300,14 @@ def remove_background(image, max_size=None):
     if mask.ndim == 3:
         mask = mask[:, :, 0]
 
-    # Binarise and remove small fragments from the mask.
+    # Binarise and clean up the mask. Close first to fill holes, then open to
+    # remove speckle noise. Finally dilate slightly to compensate shrinkage.
     _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    ell3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, ell3, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, ell3, iterations=1)
+    mask = cv2.dilate(mask, ell3, iterations=1)
+    mask = snap_mask_to_edges(image_resized, mask)
 
     if scale != 1.0:
         mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
