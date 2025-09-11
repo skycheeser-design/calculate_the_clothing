@@ -103,22 +103,29 @@ def _laplacian_var(gray_roi, roi_mask):
     return float(np.var(lap[roi_mask]))
 
 def _select_garment_contour(image_bgr, mask_bin):
+    """Return the contour most likely to be the garment.
+
+    The routine first filters out obviously irrelevant contours (too small or
+    brightly coloured markers) and then selects the largest remaining one.  If
+    nothing survives the filtering, it falls back to the largest contour from
+    the original candidates.
     """
-    前景候補（複数輪郭）から '服らしい' ものを1つ選ぶ。
-    条件で除外 → スコアで選択 → 無ければ最大面積にフォールバック。
-    """
+
     H, W = mask_bin.shape[:2]
+    frame_area = H * W
+
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+
     cnts, hier = cv2.findContours(mask_bin, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
         return None
 
-    cx, cy = W / 2.0, H / 2.0
-    keep = []
+    candidates = []
 
     for i, c in enumerate(cnts):
         area = cv2.contourArea(c)
-        if area < 2000:  # 小さすぎは除外（必要に応じて調整）
+        if area < frame_area * 0.05:
             continue
 
         x, y, w, h = cv2.boundingRect(c)
@@ -132,34 +139,22 @@ def _select_garment_contour(image_bgr, mask_bin):
         roi_mask = mask_bin[y : y + h, x : x + w] > 0
         lap_var = _laplacian_var(roi, roi_mask)
 
+        roi_hsv = hsv[y : y + h, x : x + w]
+        sat_roi = roi_hsv[..., 1]
+        sat_mean = sat_roi[roi_mask].mean() if roi_mask.any() else 0.0
+        if sat_mean > 60 and area < frame_area * 0.15:
+            continue
+
         # 固定の除外規則（板/紙を弾く）
         if rectangularity > 0.90 and (border or holes >= 1):
             continue
         if lap_var < 15.0 and rectangularity > 0.80:
             continue
 
-        # スコア：中央寄り & 面積大 を優遇、長方形/穴/端は減点、質感は加点
-        M = cv2.moments(c)
-        if M["m00"] > 0:
-            mx = M["m10"] / M["m00"]
-            my = M["m01"] / M["m00"]
-        else:
-            mx, my = x + w / 2.0, y + h / 2.0
-        center_penalty = np.hypot(mx - cx, my - cy) / max(H, W)  # 0〜1程度
+        candidates.append(c)
 
-        score = (
-            (area / float(H * W)) * 3.0         # 面積  強
-            - rectangularity * 1.5              # 長方形 減点
-            - holes * 2.0                       # 穴     減点
-            - (0.8 if border else 0.0)          # 端接触 減点
-            - center_penalty * 1.2              # 中央から遠い 減点
-            + min(lap_var / 100.0, 2.0) * 0.8   # 質感   加点（上限）
-        )
-        keep.append((score, i, c))
-
-    if keep:
-        keep.sort(key=lambda t: t[0], reverse=True)
-        return keep[0][2]
+    if candidates:
+        return max(candidates, key=cv2.contourArea)
     return max(cnts, key=cv2.contourArea)
 # -----------------------------------------------------------------------
 
