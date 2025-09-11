@@ -140,19 +140,12 @@ def _select_garment_contour(image_bgr, mask_bin):
         roi_mask = mask_bin[y : y + h, x : x + w] > 0
         lap_var = _laplacian_var(roi, roi_mask)
 
-        roi_hsv = hsv[y : y + h, x : x + w]
-        sat_roi = roi_hsv[..., 1]
-        sat_mean = sat_roi[roi_mask].mean() if roi_mask.any() else 0.0
-        if sat_mean > 60 and area < frame_area * 0.15:
-            continue
 
-        # 固定の除外規則（板/紙を弾く）
-        if rectangularity > 0.90 and (border or holes >= 1):
             continue
         if lap_var < 15.0 and rectangularity > 0.80:
             continue
 
-        candidates.append(c)
+
 
     if candidates:
         return max(candidates, key=cv2.contourArea)
@@ -164,9 +157,9 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     """Return ``True`` if the contour resembles a plain sheet of paper.
 
     A region is considered paper-like when it is almost perfectly rectangular,
-    lacks visible texture and occupies a large portion of the frame. Such
-    regions are likely background elements (e.g. calibration paper) rather than
-    garments.
+    lacks visible texture (``lap_var`` < 10) and covers more than half of the
+    frame. Such regions are likely background elements (e.g. calibration paper)
+    rather than garments.
     """
 
     x, y, w, h = cv2.boundingRect(contour)
@@ -182,7 +175,7 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     H, W = mask_bin.shape[:2]
     coverage = area / float(H * W)
 
-    return rectangularity > 0.95 and lap_var < 5.0 and coverage > 0.6
+    return rectangularity > 0.95 and lap_var < 10.0 and coverage > 0.5
 # -----------------------------------------------------------------------
 
 
