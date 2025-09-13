@@ -9,7 +9,7 @@ refined_measurements.py
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
-from smooth_cutout import generate_mask
+
 
 
 class NoGarmentDetectedError(RuntimeError):
@@ -120,6 +120,7 @@ def _is_paper_like(image_bgr, mask_bin, contour):
 
     return rectangularity > 0.95 and lap_var < 10.0 and coverage > 0.5
 # -----------------------------------------------------------------------
+
 
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):
