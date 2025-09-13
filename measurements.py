@@ -9,74 +9,11 @@ refined_measurements.py
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
+from smooth_cutout import generate_mask
 
 
 class NoGarmentDetectedError(RuntimeError):
     """Raised when the foreground region resembles paper rather than clothing."""
-
-
-# ---- 前処理（照明補正・初期マスク・GrabCut） -----------------
-def _illum_correction(gray):
-    bg = cv2.GaussianBlur(gray, (0, 0), 21)           # 大きめσで背景近似
-    corr = cv2.addWeighted(gray, 1.0, bg, -1.0, 128)  # gray - bg + 128
-    return np.clip(corr, 0, 255).astype(np.uint8)
-
-def _initial_mask(bgr):
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
-    L, A, B = cv2.split(lab)
-    Lc = _illum_correction(L)
-    Lc = cv2.normalize(Lc, None, 0, 255, cv2.NORM_MINMAX)
-
-    # Otsu + 適応しきい値（局所）
-    _, m1 = cv2.threshold(Lc, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    m2 = cv2.adaptiveThreshold(
-        Lc, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 5
-    )
-    m = cv2.bitwise_or(m1, m2)
-
-    # a,b の K-means（2クラスタ）→ Otsuと重なる方
-    ab = np.float32(np.dstack([A, B]).reshape(-1, 2))
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 1.0)
-    _, labels, _ = cv2.kmeans(ab, 2, None, criteria, 5, cv2.KMEANS_PP_CENTERS)
-    labels = labels.reshape(A.shape)
-    k0 = (labels == 0).astype(np.uint8) * 255
-    k1 = (labels == 1).astype(np.uint8) * 255
-    overlap0 = cv2.countNonZero(cv2.bitwise_and(k0, m))
-    overlap1 = cv2.countNonZero(cv2.bitwise_and(k1, m))
-    k = k0 if overlap0 >= overlap1 else k1
-
-    # 服マスク近傍のエッジ補強
-    edges = cv2.Canny(Lc, 100, 200)
-
-    init = cv2.bitwise_and(m, k)
-    init = cv2.bitwise_or(init, edges)
-    init = cv2.dilate(init, np.ones((3, 3), np.uint8), 1)
-    init = cv2.morphologyEx(init, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-    init = cv2.morphologyEx(init, cv2.MORPH_OPEN,  np.ones((3, 3), np.uint8))
-    return init
-
-def _refine_grabcut(bgr, init_mask):
-    # 0:確BG, 2:不確BG, 3:不確FG, 1:確FG
-    gc_mask = np.full(init_mask.shape, cv2.GC_PR_BGD, np.uint8)
-    gc_mask[init_mask > 0] = cv2.GC_PR_FGD
-    core = cv2.erode(init_mask, np.ones((7, 7), np.uint8), 1)
-    gc_mask[core > 0] = cv2.GC_FGD
-
-    bgdModel = np.zeros((1, 65), np.float64)
-    fgdModel = np.zeros((1, 65), np.float64)
-    cv2.grabCut(bgr, gc_mask, None, bgdModel, fgdModel, 3, cv2.GC_INIT_WITH_MASK)
-
-    mask = np.where(
-        (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
-    ).astype(np.uint8)
-    # 小穴埋め & 境界維持（粒ノイズ除去は ``_smooth_mask_keep_shape`` へ委ねる）
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-    # MORPH_OPEN shrinks the garment outline and can eat sleeve edges.
-    # Keep boundaries by dilating and delegate noise removal to
-    # ``_smooth_mask_keep_shape`` which performs gentle opening.
-    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8))
-    return mask
-# -----------------------------------------------------------------------
 
 
 # ---- “服らしさ”で輪郭選択（紙/板を除外） -----------------------
@@ -182,18 +119,6 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     coverage = area / float(H * W)
 
     return rectangularity > 0.95 and lap_var < 10.0 and coverage > 0.5
-# -----------------------------------------------------------------------
-
-
-# ---- 穏やかなスムージング（形状保持。凸包は使わない） ------------
-def _smooth_mask_keep_shape(mask):
-    m = cv2.medianBlur(mask, 5)
-    ell5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    ell3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, ell5)  # 小穴埋め
-    m = cv2.morphologyEx(m, cv2.MORPH_OPEN,  ell3)  # 粒ノイズ除去
-    m = cv2.dilate(m, ell3, 1)  # 開処理で削られた境界を少し復元
-    return m
 # -----------------------------------------------------------------------
 
 
@@ -303,16 +228,8 @@ def measure_clothes(
     if prune_threshold is None:
         prune_threshold = DEFAULT_PRUNE_THRESHOLD
 
-    # --- 1) 初期マスク
-    init = _initial_mask(image)
-    if debug:
-        cv2.imwrite("debug_init_mask.png", init)
-
-    # --- 2) GrabCut & 穏やかなスムージング
-    mask = _refine_grabcut(image, init)
-    if debug:
-        cv2.imwrite("debug_refined_mask.png", mask)
-    mask = _smooth_mask_keep_shape(mask)
+    # --- Generate garment mask ---
+    mask = generate_mask(image)
     if debug:
         cv2.imwrite("debug_smooth_mask.png", mask)
 
