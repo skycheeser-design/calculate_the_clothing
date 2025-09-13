@@ -9,6 +9,7 @@ refined_measurements.py
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
+from image_utils import _smooth_mask_keep_shape
 
 
 class NoGarmentDetectedError(RuntimeError):
@@ -185,16 +186,6 @@ def _is_paper_like(image_bgr, mask_bin, contour):
 # -----------------------------------------------------------------------
 
 
-# ---- 穏やかなスムージング（形状保持。凸包は使わない） ------------
-def _smooth_mask_keep_shape(mask):
-    m = cv2.medianBlur(mask, 5)
-    ell5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    ell3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, ell5)  # 小穴埋め
-    m = cv2.morphologyEx(m, cv2.MORPH_OPEN,  ell3)  # 粒ノイズ除去
-    m = cv2.dilate(m, ell3, 1)  # 開処理で削られた境界を少し復元
-    return m
-# -----------------------------------------------------------------------
 
 
 def _split_sleeve_points(skeleton, left_shoulder, right_shoulder):

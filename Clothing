@@ -4,28 +4,13 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import numbers
 from measurements import measure_clothes, NoGarmentDetectedError
-try:
-    import pillow_heif
-except ImportError:  # pragma: no cover
-    pillow_heif = None
+from image_utils import load_image
 try:
     import rembg
     session = rembg.new_session("u2netp")
 except ImportError:  # pragma: no cover
     rembg = None
     session = None
-
-# HEIC対応読み込み
-def load_image(path):
-    ext = os.path.splitext(path)[-1].lower()
-    if ext == ".heic":
-        if pillow_heif is None:
-            raise ImportError("pillow_heif is required to load HEIC images")
-        heif_file = pillow_heif.read_heif(path)
-        img = Image.frombytes(heif_file.mode, heif_file.size, heif_file.data, "raw")
-        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    else:
-        return cv2.imread(path)
 
 # 黒四角マーカー検出
 def detect_marker(
