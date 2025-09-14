@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 import cv2
 import numpy as np
 from PIL import Image
@@ -21,7 +23,7 @@ def load_image(path):
         return cv2.imread(path)
 
 
-def _adaptive_kernel_size(img) -> int | None:
+def _adaptive_kernel_size(img) -> Optional[int]:
     """Return a kernel size based on the image's shorter side.
 
     Parameters
@@ -31,7 +33,7 @@ def _adaptive_kernel_size(img) -> int | None:
 
     Returns
     -------
-    int | None
+    Optional[int]
         ``3``, ``5`` or ``7`` based on the shorter dimension.  ``None`` if the
         size cannot be determined.
     """
