@@ -62,6 +62,38 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
     bgd_model = np.zeros((1, 65), np.float64)
     fgd_model = np.zeros((1, 65), np.float64)
     cv2.grabCut(smooth, gc_mask, None, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_MASK)
+
+    # Detect bright low-saturation rectangular regions (e.g. paper backgrounds)
+    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
+    thresh = cv2.inRange(hsv, (0, 0, 200), (180, 25, 255))
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    gray = cv2.cvtColor(smooth, cv2.COLOR_BGR2GRAY)
+    img_area = h * w
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        area_ratio = area / img_area
+        if area_ratio < 0.01 or area_ratio > 0.30:
+            continue
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        if len(approx) != 4 or not cv2.isContourConvex(approx):
+            continue
+        x, y, rw, rh = cv2.boundingRect(approx)
+        aspect = max(rw, rh) / max(min(rw, rh), 1)
+        if not (1.21 <= aspect <= 1.61):
+            continue
+        region_mask = np.zeros_like(thresh)
+        cv2.drawContours(region_mask, [approx], -1, 255, -1)
+        mean_h, mean_s, mean_v, _ = cv2.mean(hsv, mask=region_mask)
+        if mean_v <= 200 or mean_s >= 25:
+            continue
+        lap_var = cv2.Laplacian(gray[y : y + rh, x : x + rw], cv2.CV_64F).var()
+        if lap_var >= 10:
+            continue
+        cv2.drawContours(gc_mask, [approx], -1, cv2.GC_BGD, -1)
+
+    # Rerun GrabCut with refined background labels
+    cv2.grabCut(smooth, gc_mask, None, bgd_model, fgd_model, 3, cv2.GC_INIT_WITH_MASK)
     mask = np.where(
         (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
     ).astype("uint8")
