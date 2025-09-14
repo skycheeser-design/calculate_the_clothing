@@ -9,11 +9,26 @@ refined_measurements.py
 import cv2
 import numpy as np
 from skimage.morphology import skeletonize
+from smooth_cutout import generate_mask
+from image_utils import _smooth_mask_keep_shape
 
 
 
 class NoGarmentDetectedError(RuntimeError):
     """Raised when the foreground region resembles paper rather than clothing."""
+
+
+# ---- Constants controlling garment-likeness heuristics -----------------
+MIN_AREA_RATIO = 0.05
+MARKER_SAT_THRESHOLD = 60
+MARKER_AREA_RATIO = 0.15
+RECTANGULARITY_HIGH = 0.90
+RECTANGULARITY_LAP = 0.80
+LAP_VAR_LOW = 15.0
+PAPER_RECT_THRESHOLD = 0.95
+PAPER_LAP_VAR_THRESHOLD = 10.0
+PAPER_COVERAGE_THRESHOLD = 0.5
+BORDER_MARGIN = 3
 
 
 # ---- “服らしさ”で輪郭選択（紙/板を除外） -----------------------
@@ -28,7 +43,7 @@ def _count_holes(hierarchy, idx):
         child = hierarchy[0][child][0]  # Next
     return holes
 
-def _border_touch(bbox, img_shape, margin=3):
+def _border_touch(bbox, img_shape, margin=BORDER_MARGIN):
     x, y, w, h = bbox
     H, W = img_shape[:2]
     return x <= margin or y <= margin or (x + w) >= W - margin or (y + h) >= H - margin
@@ -63,7 +78,7 @@ def _select_garment_contour(image_bgr, mask_bin):
 
     for i, c in enumerate(cnts):
         area = cv2.contourArea(c)
-        if area < frame_area * 0.05:
+        if area < frame_area * MIN_AREA_RATIO:
             continue
 
         x, y, w, h = cv2.boundingRect(c)
@@ -71,7 +86,7 @@ def _select_garment_contour(image_bgr, mask_bin):
 
         rectangularity = area / rect_area  # 長方形に近いほど1
         holes = _count_holes(hier, i)
-        border = _border_touch((x, y, w, h), (H, W), margin=3)
+        border = _border_touch((x, y, w, h), (H, W), margin=BORDER_MARGIN)
 
         roi = gray[y : y + h, x : x + w]
         roi_mask = mask_bin[y : y + h, x : x + w] > 0
@@ -80,13 +95,13 @@ def _select_garment_contour(image_bgr, mask_bin):
         roi_hsv = hsv[y : y + h, x : x + w]
         sat_roi = roi_hsv[..., 1]
         sat_mean = sat_roi[roi_mask].mean() if roi_mask.any() else 0.0
-        if sat_mean > 60 and area < frame_area * 0.15:
+        if sat_mean > MARKER_SAT_THRESHOLD and area < frame_area * MARKER_AREA_RATIO:
             continue
 
         # 固定の除外規則（板/紙を弾く）
-        if rectangularity > 0.90 and (border or holes >= 1):
+        if rectangularity > RECTANGULARITY_HIGH and (border or holes >= 1):
             continue
-        if lap_var < 15.0 and rectangularity > 0.80:
+        if lap_var < LAP_VAR_LOW and rectangularity > RECTANGULARITY_LAP:
             continue
 
         candidates.append(c)
@@ -118,7 +133,11 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     H, W = mask_bin.shape[:2]
     coverage = area / float(H * W)
 
-    return rectangularity > 0.95 and lap_var < 10.0 and coverage > 0.5
+    return (
+        rectangularity > PAPER_RECT_THRESHOLD
+        and lap_var < PAPER_LAP_VAR_THRESHOLD
+        and coverage > PAPER_COVERAGE_THRESHOLD
+    )
 # -----------------------------------------------------------------------
 
 
@@ -227,10 +246,11 @@ def measure_clothes(
             return float(np.inf)
 
     if prune_threshold is None:
-        prune_threshold = DEFAULT_PRUNE_THRESHOLD
+        prune_threshold = max(DEFAULT_PRUNE_THRESHOLD, image.shape[0] // 80)
 
     # --- Generate garment mask ---
     mask = generate_mask(image)
+    mask = _smooth_mask_keep_shape(mask)
     if debug:
         cv2.imwrite("debug_smooth_mask.png", mask)
 
@@ -285,20 +305,23 @@ def measure_clothes(
     bottom_y = int(column_pixels.max())
     height = bottom_y - top_y
 
-    # --- 6) 肩幅：上部25%以内の輪郭から両端点を最遠対で取得 ---
-    upper_limit = top_y + int(height * 0.25)
-    contour_points = clothes_contour[:, 0, :]
-    upper_points = contour_points[contour_points[:, 1] <= y + upper_limit]
-    if upper_points.shape[0] < 2:
+    # --- 6) 肩幅：上部25%ライン±3pxの幅の中央値 ---
+    shoulder_rows = []
+    band_center = top_y + int(height * 0.25)
+    for offset in range(-3, 4):
+        yy = band_center + offset
+        if 0 <= yy < h:
+            row = mask[yy]
+            xs = np.where(row > 0)[0]
+            if xs.size >= 2:
+                shoulder_rows.append((yy, xs[0], xs[-1], xs[-1] - xs[0]))
+    if not shoulder_rows:
         raise ValueError("Shoulder line not detected")
-    diff = upper_points[:, None, :] - upper_points[None, :, :]
-    dist_sq = np.sum(diff * diff, axis=2)
-    i, j = np.unravel_index(np.argmax(dist_sq), dist_sq.shape)
-    left_shoulder = tuple(upper_points[i])
-    right_shoulder = tuple(upper_points[j])
-    if left_shoulder[0] > right_shoulder[0]:
-        left_shoulder, right_shoulder = right_shoulder, left_shoulder
-    shoulder_width = right_shoulder[0] - left_shoulder[0]
+    widths = [r[3] for r in shoulder_rows]
+    shoulder_width = float(np.median(widths))
+    yy, left_x, right_x, _ = min(shoulder_rows, key=lambda r: abs(r[3] - shoulder_width))
+    left_shoulder = (int(left_x), int(yy))
+    right_shoulder = (int(right_x), int(yy))
 
     # --- 7) 身幅（25%〜50%帯で中央と連結した幅の中央値） ---
     if smooth_factor > 0 or vertical_kernel_size is not None or horizontal_kernel_size is not None:

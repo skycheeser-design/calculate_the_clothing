@@ -6,7 +6,7 @@ parallelised or even executed on separate workers in the future.
 
 from concurrent.futures import ThreadPoolExecutor
 from heapq import heappush, heappop
-from typing import Tuple
+from typing import Tuple, Optional
 import os
 
 import cv2
@@ -19,17 +19,21 @@ import numpy as np
 DEFAULT_PRUNE_THRESHOLD = int(os.getenv("PRUNE_THRESHOLD", "20"))
 
 
-def prune_skeleton(skeleton: np.ndarray, min_length: int = DEFAULT_PRUNE_THRESHOLD) -> np.ndarray:
+def prune_skeleton(skeleton: np.ndarray, min_length: Optional[int] = None) -> np.ndarray:
     """Remove short dangling branches from a skeleton image.
 
     The function iteratively traces every end point in ``skeleton`` and removes
-    the branch if its length does not exceed ``min_length`` pixels. This helps
-    reduce spurious spurs introduced during skeletonisation so sleeve
-    measurements operate on a cleaner topology.
+    the branch if its length does not exceed ``min_length`` pixels. When
+    ``min_length`` is ``None`` the value defaults to ``max(DEFAULT_PRUNE_THRESHOLD,
+    H//80)`` where ``H`` is the image height. This helps reduce spurious spurs
+    introduced during skeletonisation so sleeve measurements operate on a
+    cleaner topology.
     """
 
     skel = skeleton.copy().astype(bool)
     h, w = skel.shape
+    if min_length is None:
+        min_length = max(DEFAULT_PRUNE_THRESHOLD, h // 80)
     kernel = np.ones((3, 3), np.uint8)
 
     def _trace_branch(x: int, y: int):
