@@ -27,7 +27,7 @@ RECTANGULARITY_LAP = 0.80
 LAP_VAR_LOW = 15.0
 PAPER_RECT_THRESHOLD = 0.95
 PAPER_LAP_VAR_THRESHOLD = 10.0
-PAPER_COVERAGE_THRESHOLD = 0.5
+PAPER_COVERAGE_THRESHOLD = 0.15
 BORDER_MARGIN = 3
 
 
@@ -126,9 +126,9 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     """Return ``True`` if the contour resembles a plain sheet of paper.
 
     A region is considered paper-like when it is almost perfectly rectangular,
-    lacks visible texture (``lap_var`` < 10) and covers more than half of the
-    frame. Such regions are likely background elements (e.g. calibration paper)
-    rather than garments.
+    lacks visible texture (``lap_var`` < 10), covers a significant portion of the
+    frame and is very bright with little colour. Such regions are likely
+    background elements (e.g. calibration paper) rather than garments.
     """
 
     x, y, w, h = cv2.boundingRect(contour)
@@ -141,6 +141,11 @@ def _is_paper_like(image_bgr, mask_bin, contour):
     roi_mask = mask_bin[y : y + h, x : x + w] > 0
     lap_var = _laplacian_var(roi, roi_mask)
 
+    roi_bgr = image_bgr[y : y + h, x : x + w]
+    roi_hsv = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV)
+    sat_mean = roi_hsv[..., 1][roi_mask].mean() if roi_mask.any() else 0.0
+    val_mean = roi_hsv[..., 2][roi_mask].mean() if roi_mask.any() else 0.0
+
     H, W = mask_bin.shape[:2]
     coverage = area / float(H * W)
 
@@ -148,6 +153,8 @@ def _is_paper_like(image_bgr, mask_bin, contour):
         rectangularity > PAPER_RECT_THRESHOLD
         and lap_var < PAPER_LAP_VAR_THRESHOLD
         and coverage > PAPER_COVERAGE_THRESHOLD
+        and val_mean > 200
+        and sat_mean < 25
     )
 # -----------------------------------------------------------------------
 
