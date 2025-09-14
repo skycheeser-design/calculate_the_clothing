@@ -16,7 +16,8 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
     -----
     1.  Bilateral filtering for edge‑preserving denoising.
     2.  ``a`` and ``b`` channels in Lab space are clustered via K-means
-        (``k=2``) to obtain an initial foreground estimate.
+        (typically ``k=2``) and each cluster is scored by central occupancy,
+        texture and border contact to choose the garment region.
     3.  The estimate is refined with :func:`cv2.grabCut`.
     4.  The result is morphologically closed and opened using an elliptical
         kernel.
@@ -49,12 +50,44 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
         ab, k, None, criteria, 1, cv2.KMEANS_PP_CENTERS
     )
     labels = labels.reshape(lab.shape[:2])
+
+    # Score clusters via central occupancy, texture and border contact
     h, w = labels.shape
-    border = np.concatenate(
-        [labels[0], labels[-1], labels[:, 0], labels[:, -1]]
-    )
-    counts = [np.count_nonzero(border == i) for i in range(k)]
-    garment_cluster = int(np.argmin(counts))
+    gray = cv2.cvtColor(smooth, cv2.COLOR_BGR2GRAY)
+    lap = cv2.Laplacian(gray, cv2.CV_64F)
+
+    center_y0, center_y1 = int(h * 0.2), int(h * 0.8)
+    center_x0, center_x1 = int(w * 0.2), int(w * 0.8)
+    center_window = np.zeros_like(labels, dtype=bool)
+    center_window[center_y0:center_y1, center_x0:center_x1] = True
+
+    border_mask = np.zeros_like(labels, dtype=bool)
+    border_mask[0, :] = border_mask[-1, :] = True
+    border_mask[:, 0] = border_mask[:, -1] = True
+
+    occs, lap_vars, borders = [], [], []
+    for i in range(k):
+        cluster = labels == i
+        count = np.count_nonzero(cluster)
+        if count == 0:
+            occs.append(0.0)
+            lap_vars.append(0.0)
+            borders.append(1.0)
+            continue
+        occ = np.count_nonzero(cluster & center_window) / count
+        lap_var = float(lap[cluster].var()) if count else 0.0
+        border_ratio = np.count_nonzero(cluster & border_mask) / count
+        occs.append(occ)
+        lap_vars.append(lap_var)
+        borders.append(border_ratio)
+
+    lap_max = max(lap_vars) if max(lap_vars) > 0 else 1.0
+    scores = []
+    for occ, lap_var, border_ratio in zip(occs, lap_vars, borders):
+        score = 0.5 * occ + 0.3 * (lap_var / lap_max) - 0.2 * border_ratio
+        scores.append(score)
+
+    garment_cluster = int(np.argmax(scores))
     init_mask = np.where(labels == garment_cluster, 1, 0).astype("uint8")
 
     # 3) Refine with GrabCut
