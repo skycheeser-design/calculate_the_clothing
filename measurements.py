@@ -76,13 +76,26 @@ def _select_garment_contour(image_bgr, mask_bin):
             area = cv2.contourArea(c)
             if area < frame_area * MIN_AREA_RATIO:
                 continue
+            coverage = area / frame_area
+            if coverage > 0.70:
+                continue
 
             x, y, w, h = cv2.boundingRect(c)
             rect_area = float(w * h) or 1.0
 
             rectangularity = area / rect_area  # 長方形に近いほど1
             holes = _count_holes(hier, i)
+
             border = _border_touch((x, y, w, h), (H, W), margin=BORDER_MARGIN)
+            border_pts = np.count_nonzero(
+                (c[:, 0, 0] <= BORDER_MARGIN)
+                | (c[:, 0, 0] >= W - 1 - BORDER_MARGIN)
+                | (c[:, 0, 1] <= BORDER_MARGIN)
+                | (c[:, 0, 1] >= H - 1 - BORDER_MARGIN)
+            )
+            border_touch_ratio = border_pts / len(c)
+            if border_touch_ratio > 0.2:
+                continue
 
             roi = gray[y : y + h, x : x + w]
             roi_mask = mask_bin[y : y + h, x : x + w] > 0
@@ -267,10 +280,8 @@ def measure_clothes(
         prune_threshold = max(DEFAULT_PRUNE_THRESHOLD, image.shape[0] // 80)
 
     # --- Generate garment mask ---
-    mask = generate_mask(image)
+    mask = generate_mask(image, debug=debug)
     mask = _smooth_mask_keep_shape(mask)
-    if debug:
-        cv2.imwrite("debug_smooth_mask.png", mask)
 
     # --- 3) 服らしい輪郭を選ぶ（紙/板を除外）
     clothes_contour = _select_garment_contour(image, mask)
@@ -297,53 +308,72 @@ def measure_clothes(
     if area < (mask.shape[0] * mask.shape[1]) * 0.02:
         raise ValueError("Mask area too small (possible segmentation failure)")
 
-    # --- 5) 中央線と上端・下端を推定 ---
-    moments = cv2.moments(mask, binaryImage=True)
-    if moments["m00"] == 0:
+    # --- 5) 中心線を距離変換リッジで取得し、上端・下端を決定 ---
+    dist = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+    ridge_x = np.argmax(dist, axis=1)
+    ridge_val = dist.max(axis=1)
+    rows = np.where(ridge_val > 0)[0]
+    if rows.size == 0:
         raise ValueError("Center line not found")
-    center_x = int(moments["m10"] / moments["m00"])
+    center_x = int(np.median(ridge_x[rows]))
     center_x = max(0, min(w - 1, center_x))
-
     column_pixels = np.where(mask[:, center_x] > 0)[0]
     if column_pixels.size == 0:
-        for off in range(1, w):
-            for sign in (-1, 1):
-                cx = center_x + off * sign
-                if 0 <= cx < w:
-                    column_pixels = np.where(mask[:, cx] > 0)[0]
-                    if column_pixels.size > 0:
-                        center_x = cx
-                        break
-            if column_pixels.size > 0:
-                break
-        if column_pixels.size == 0:
-            raise ValueError("Center line not found")
-
+        raise ValueError("Center line not found")
     top_y = int(column_pixels.min())
     bottom_y = int(column_pixels.max())
     height = bottom_y - top_y
 
-    # --- 6) 肩幅：上部10%〜35%を走査し、上位30%幅の中央値 ---
+    # --- 6) 肩幅：上部8%〜40%を走査し、上位25%幅の中央値 ---
     shoulder_rows = []
-    start_y = top_y + int(height * 0.10)
-    end_y = top_y + int(height * 0.35)
+    start_y = top_y + int(height * 0.08)
+    end_y = top_y + int(height * 0.40)
     start_y = max(0, start_y)
     end_y = min(h - 1, end_y)
     for yy in range(start_y, end_y + 1):
         row = mask[yy]
         xs = np.where(row > 0)[0]
         if xs.size >= 2:
-            shoulder_rows.append((yy, xs[0], xs[-1], xs[-1] - xs[0]))
+            splits = np.where(np.diff(xs) > 1)[0] + 1
+            runs = np.split(xs, splits)
+            longest = max(runs, key=lambda r: r[-1] - r[0])
+            left, right = int(longest[0]), int(longest[-1])
+            shoulder_rows.append((yy, left, right, right - left))
     if not shoulder_rows:
         raise ValueError("Shoulder line not detected")
     shoulder_rows.sort(key=lambda r: r[3], reverse=True)
-    top_n = max(1, int(np.ceil(len(shoulder_rows) * 0.30)))
+    top_n = max(1, int(np.ceil(len(shoulder_rows) * 0.25)))
     top_rows = shoulder_rows[:top_n]
     widths = [r[3] for r in top_rows]
     shoulder_width = float(np.median(widths))
     yy, left_x, right_x, _ = min(top_rows, key=lambda r: abs(r[3] - shoulder_width))
+
+    # Sobel-based refinement of shoulder points
+    sobelx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    sobely = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    grad = cv2.magnitude(sobelx, sobely)
+    win = 3
+    l_start = max(0, left_x - win)
+    l_end = min(w - 1, left_x + win)
+    l_slice = grad[yy, l_start : l_end + 1]
+    if l_slice.size > 0:
+        left_x = l_start + int(np.argmax(l_slice))
+    r_start = max(0, right_x - win)
+    r_end = min(w - 1, right_x + win)
+    r_slice = grad[yy, r_start : r_end + 1]
+    if r_slice.size > 0:
+        right_x = r_start + int(np.argmax(r_slice))
+
+    shoulder_width = float(right_x - left_x)
     left_shoulder = (int(left_x), int(yy))
     right_shoulder = (int(right_x), int(yy))
+
+    if debug:
+        dbg_band = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        for y0, lx, rx, _ in top_rows:
+            cv2.line(dbg_band, (lx, y0), (rx, y0), (0, 0, 255), 1)
+        cv2.line(dbg_band, (left_x, yy), (right_x, yy), (0, 255, 0), 2)
+        cv2.imwrite("debug_shoulder_band.png", dbg_band)
 
     # --- 7) 身幅（25%〜50%帯で中央と連結した幅の中央値） ---
     if smooth_factor > 0 or vertical_kernel_size is not None or horizontal_kernel_size is not None:
