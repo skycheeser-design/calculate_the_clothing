@@ -58,10 +58,10 @@ def _laplacian_var(gray_roi, roi_mask):
 def _select_garment_contour(image_bgr, mask_bin):
     """Return the contour most likely to be the garment.
 
-    The routine first filters out obviously irrelevant contours (too small or
-    brightly coloured markers) and then selects the largest remaining one.  If
-    nothing survives the filtering, it falls back to the largest contour from
-    the original candidates.
+    The routine first evaluates external contours (ignoring holes).  If no
+    contour passes the garment-likeness checks, it retries using
+    ``RETR_CCOMP`` to incorporate hole information.  The existing filtering
+    rules for area, border contact and marker colour are preserved.
     """
 
     H, W = mask_bin.shape[:2]
@@ -70,43 +70,54 @@ def _select_garment_contour(image_bgr, mask_bin):
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
 
+    def _evaluate(cnts, hier):
+        candidates = []
+        for i, c in enumerate(cnts):
+            area = cv2.contourArea(c)
+            if area < frame_area * MIN_AREA_RATIO:
+                continue
+
+            x, y, w, h = cv2.boundingRect(c)
+            rect_area = float(w * h) or 1.0
+
+            rectangularity = area / rect_area  # 長方形に近いほど1
+            holes = _count_holes(hier, i)
+            border = _border_touch((x, y, w, h), (H, W), margin=BORDER_MARGIN)
+
+            roi = gray[y : y + h, x : x + w]
+            roi_mask = mask_bin[y : y + h, x : x + w] > 0
+            lap_var = _laplacian_var(roi, roi_mask)
+
+            roi_hsv = hsv[y : y + h, x : x + w]
+            sat_roi = roi_hsv[..., 1]
+            sat_mean = sat_roi[roi_mask].mean() if roi_mask.any() else 0.0
+            if sat_mean > MARKER_SAT_THRESHOLD and area < frame_area * MARKER_AREA_RATIO:
+                continue
+
+            # 固定の除外規則（板/紙を弾く）
+            if rectangularity > RECTANGULARITY_HIGH and (border or holes >= 1):
+                continue
+            if lap_var < LAP_VAR_LOW and rectangularity > RECTANGULARITY_LAP:
+                continue
+
+            candidates.append(c)
+        if candidates:
+            return max(candidates, key=cv2.contourArea)
+        return None
+
+    cnts, hier = cv2.findContours(mask_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
+    best = _evaluate(cnts, hier)
+    if best is not None:
+        return best
+
     cnts, hier = cv2.findContours(mask_bin, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
         return None
-
-    candidates = []
-
-    for i, c in enumerate(cnts):
-        area = cv2.contourArea(c)
-        if area < frame_area * MIN_AREA_RATIO:
-            continue
-
-        x, y, w, h = cv2.boundingRect(c)
-        rect_area = float(w * h) or 1.0
-
-        rectangularity = area / rect_area  # 長方形に近いほど1
-        holes = _count_holes(hier, i)
-        border = _border_touch((x, y, w, h), (H, W), margin=BORDER_MARGIN)
-
-        roi = gray[y : y + h, x : x + w]
-        roi_mask = mask_bin[y : y + h, x : x + w] > 0
-        lap_var = _laplacian_var(roi, roi_mask)
-
-        roi_hsv = hsv[y : y + h, x : x + w]
-        sat_roi = roi_hsv[..., 1]
-        sat_mean = sat_roi[roi_mask].mean() if roi_mask.any() else 0.0
-        if sat_mean > MARKER_SAT_THRESHOLD and area < frame_area * MARKER_AREA_RATIO:
-            continue
-
-        # 固定の除外規則（板/紙を弾く）
-        if rectangularity > RECTANGULARITY_HIGH and (border or holes >= 1):
-            continue
-        if lap_var < LAP_VAR_LOW and rectangularity > RECTANGULARITY_LAP:
-            continue
-
-        candidates.append(c)
-    if candidates:
-        return max(candidates, key=cv2.contourArea)
+    best = _evaluate(cnts, hier)
+    if best is not None:
+        return best
     return max(cnts, key=cv2.contourArea)
 # -----------------------------------------------------------------------
 
