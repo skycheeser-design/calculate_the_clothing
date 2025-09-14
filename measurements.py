@@ -316,21 +316,25 @@ def measure_clothes(
     bottom_y = int(column_pixels.max())
     height = bottom_y - top_y
 
-    # --- 6) 肩幅：上部25%ライン±3pxの幅の中央値 ---
+    # --- 6) 肩幅：上部10%〜35%を走査し、上位30%幅の中央値 ---
     shoulder_rows = []
-    band_center = top_y + int(height * 0.25)
-    for offset in range(-3, 4):
-        yy = band_center + offset
-        if 0 <= yy < h:
-            row = mask[yy]
-            xs = np.where(row > 0)[0]
-            if xs.size >= 2:
-                shoulder_rows.append((yy, xs[0], xs[-1], xs[-1] - xs[0]))
+    start_y = top_y + int(height * 0.10)
+    end_y = top_y + int(height * 0.35)
+    start_y = max(0, start_y)
+    end_y = min(h - 1, end_y)
+    for yy in range(start_y, end_y + 1):
+        row = mask[yy]
+        xs = np.where(row > 0)[0]
+        if xs.size >= 2:
+            shoulder_rows.append((yy, xs[0], xs[-1], xs[-1] - xs[0]))
     if not shoulder_rows:
         raise ValueError("Shoulder line not detected")
-    widths = [r[3] for r in shoulder_rows]
+    shoulder_rows.sort(key=lambda r: r[3], reverse=True)
+    top_n = max(1, int(np.ceil(len(shoulder_rows) * 0.30)))
+    top_rows = shoulder_rows[:top_n]
+    widths = [r[3] for r in top_rows]
     shoulder_width = float(np.median(widths))
-    yy, left_x, right_x, _ = min(shoulder_rows, key=lambda r: abs(r[3] - shoulder_width))
+    yy, left_x, right_x, _ = min(top_rows, key=lambda r: abs(r[3] - shoulder_width))
     left_shoulder = (int(left_x), int(yy))
     right_shoulder = (int(right_x), int(yy))
 
