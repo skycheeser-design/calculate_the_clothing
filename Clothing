@@ -478,7 +478,14 @@ if __name__ == "__main__":
     )
     cv2.drawContours(img_with_text, [contour], -1, (255, 0, 0), 2)
 
-    # 保存
-    cv2.imwrite("clothes_with_measurements.jpg", img_with_text)
-    print("寸法入り画像を保存しました → clothes_with_measurements.jpg")
+    # 保存 (重複を避けるためにナンバリング)
+    base_name, ext = "clothes_with_measurements", ".jpg"
+    filename = base_name + ext
+    counter = 1
+    while os.path.exists(filename):
+        filename = f"{base_name}_{counter}{ext}"
+        counter += 1
+
+    cv2.imwrite(filename, img_with_text)
+    print(f"寸法入り画像を保存しました → {filename}")
 
