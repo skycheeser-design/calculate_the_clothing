@@ -56,7 +56,13 @@ def _adaptive_kernel_size(img) -> Optional[int]:
 
 
 def _smooth_mask_keep_shape(mask):
-    """Gently smooth ``mask`` while preserving its shape."""
+    """Gently smooth ``mask`` while preserving its shape.
+
+    The smoothing strength adapts to the resolution of ``mask`` via
+    :func:`_adaptive_kernel_size`, ensuring comparable behaviour across input
+    sizes.
+    """
+
     k = _adaptive_kernel_size(mask)
     if k is None:
         m = cv2.medianBlur(mask, 5)

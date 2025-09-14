@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 
-def generate_mask(image: np.ndarray) -> np.ndarray:
+def generate_mask(image: np.ndarray, debug: bool = False) -> np.ndarray:
     """Return a binary mask of the clothing region.
 
     The routine performs a colour based segmentation followed by GrabCut and
@@ -18,7 +18,8 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
     2.  ``a`` and ``b`` channels in Lab space are clustered via K-means
         (typically ``k=2``) and each cluster is scored by central occupancy,
         texture and border contact to choose the garment region.
-    3.  The estimate is refined with :func:`cv2.grabCut`.
+    3.  ``V`` channel is lightly equalised with CLAHE and the estimate is
+        refined with :func:`cv2.grabCut`.
     4.  The result is morphologically closed and opened using an elliptical
         kernel.
     5.  A distance transform is normalised and re-thresholded to obtain the
@@ -90,17 +91,34 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
     garment_cluster = int(np.argmax(scores))
     init_mask = np.where(labels == garment_cluster, 1, 0).astype("uint8")
 
-    # 3) Refine with GrabCut
+    # 3) CLAHE on V channel and initial GrabCut mask
+    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    hsv[:, :, 2] = clahe.apply(hsv[:, :, 2])
+    clahe_img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
     gc_mask = np.where(init_mask == 1, cv2.GC_PR_FGD, cv2.GC_PR_BGD).astype("uint8")
+
+    # Mark large uniform border-touching regions as background
+    val = hsv[:, :, 2]
+    for i in range(k):
+        cluster = labels == i
+        count = np.count_nonzero(cluster)
+        if count == 0:
+            continue
+        border_ratio = np.count_nonzero(cluster & border_mask) / count
+        val_std = val[cluster].std() if count else 0.0
+        lap_var = float(lap[cluster].var()) if count else 0.0
+        if border_ratio > 0.2 and val_std < 10 and lap_var < 5:
+            gc_mask[cluster] = cv2.GC_BGD
+
     bgd_model = np.zeros((1, 65), np.float64)
     fgd_model = np.zeros((1, 65), np.float64)
-    cv2.grabCut(smooth, gc_mask, None, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_MASK)
 
     # Detect bright low-saturation rectangular regions (e.g. paper backgrounds)
-    hsv = cv2.cvtColor(smooth, cv2.COLOR_BGR2HSV)
     thresh = cv2.inRange(hsv, (0, 0, 200), (180, 25, 255))
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    gray = cv2.cvtColor(smooth, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(clahe_img, cv2.COLOR_BGR2GRAY)
     img_area = h * w
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -125,8 +143,13 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
             continue
         cv2.drawContours(gc_mask, [approx], -1, cv2.GC_BGD, -1)
 
+    cv2.grabCut(clahe_img, gc_mask, None, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_MASK)
+    gc_result = np.where(
+        (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
+    ).astype("uint8")
+
     # Rerun GrabCut with refined background labels
-    cv2.grabCut(smooth, gc_mask, None, bgd_model, fgd_model, 3, cv2.GC_INIT_WITH_MASK)
+    cv2.grabCut(clahe_img, gc_mask, None, bgd_model, fgd_model, 3, cv2.GC_INIT_WITH_MASK)
     mask = np.where(
         (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0
     ).astype("uint8")
@@ -144,8 +167,19 @@ def generate_mask(image: np.ndarray) -> np.ndarray:
     cnts, _ = cv2.findContours(dist_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     final_mask = np.zeros_like(mask)
     if cnts:
-        c = max(cnts, key=cv2.contourArea)
-        cv2.drawContours(final_mask, [c], -1, 255, -1)
+        cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
+        for c in cnts:
+            x, y, cw, ch = cv2.boundingRect(c)
+            if x <= 2 or y <= 2 or (x + cw) >= w - 2 or (y + ch) >= h - 2:
+                continue
+            cv2.drawContours(final_mask, [c], -1, 255, -1)
+            break
+
+    if debug:
+        gc_vis = cv2.cvtColor(gc_result, cv2.COLOR_GRAY2BGR)
+        final_vis = cv2.cvtColor(final_mask, cv2.COLOR_GRAY2BGR)
+        dbg = np.hstack([clahe_img, gc_vis, final_vis])
+        cv2.imwrite("debug_smooth_mask.png", dbg)
     return final_mask
 
 
