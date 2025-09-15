@@ -29,9 +29,12 @@ def segment_garment(img: np.ndarray, thresh_debug_path: Optional[str] = None) ->
     img:
         Input image in BGR colour space.
     thresh_debug_path: Optional[str]
-        When provided, the intermediate image produced by Otsu thresholding
-        will be written to this path for inspection.  This helps diagnosing
-        segmentation issues by exposing the raw threshold result.
+        When provided, debug variants of the threshold candidates are written
+        next to this base path.  The function will create three images with
+        ``*_hsv``, ``*_otsu`` and ``*_otsu_inv`` suffixes representing the
+        saturation/darkness mask and the normal/inverted Otsu results
+        respectively.  This helps diagnosing segmentation issues by exposing
+        all threshold candidates.
     """
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -45,10 +48,16 @@ def segment_garment(img: np.ndarray, thresh_debug_path: Optional[str] = None) ->
     # Candidate 2/3: Otsu thresholding (normal and inverted)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    if thresh_debug_path is not None:
-        cv2.imwrite(thresh_debug_path, otsu)
     M2 = otsu
     M3 = cv2.bitwise_not(otsu)
+
+    if thresh_debug_path is not None:
+        base, ext = os.path.splitext(thresh_debug_path)
+        if not ext:
+            ext = ".png"
+        cv2.imwrite(f"{base}_hsv{ext}", M1)
+        cv2.imwrite(f"{base}_otsu{ext}", M2)
+        cv2.imwrite(f"{base}_otsu_inv{ext}", M3)
 
     # Detect large bright paper-like regions to exclude
     paper = np.where((V > 200) & (S < 25), 255, 0).astype(np.uint8)
