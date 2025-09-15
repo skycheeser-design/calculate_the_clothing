@@ -21,8 +21,18 @@ class NoGarmentDetectedError(RuntimeError):
     """Raised when no suitable garment contour can be found."""
 
 
-def segment_garment(img: np.ndarray) -> np.ndarray:
-    """Return a binary mask separating garment from the background."""
+def segment_garment(img: np.ndarray, thresh_debug_path: Optional[str] = None) -> np.ndarray:
+    """Return a binary mask separating garment from the background.
+
+    Parameters
+    ----------
+    img:
+        Input image in BGR colour space.
+    thresh_debug_path: Optional[str]
+        When provided, the intermediate image produced by Otsu thresholding
+        will be written to this path for inspection.  This helps diagnosing
+        segmentation issues by exposing the raw threshold result.
+    """
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h, w = hsv.shape[:2]
@@ -35,6 +45,8 @@ def segment_garment(img: np.ndarray) -> np.ndarray:
     # Candidate 2/3: Otsu thresholding (normal and inverted)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if thresh_debug_path is not None:
+        cv2.imwrite(thresh_debug_path, otsu)
     M2 = otsu
     M3 = cv2.bitwise_not(otsu)
 
@@ -197,10 +209,26 @@ def visualize(img: np.ndarray, mask: np.ndarray, meas: Dict[str, float]) -> np.n
     return vis
 
 
-def binary_mask(image: np.ndarray, debug_path: Optional[str] = None) -> np.ndarray:
-    """Generate garment mask and optionally write it to ``debug_path``."""
+def binary_mask(
+    image: np.ndarray,
+    debug_path: Optional[str] = None,
+    threshold_path: Optional[str] = None,
+) -> np.ndarray:
+    """Generate garment mask and optionally write it to ``debug_path``.
 
-    mask = segment_garment(image)
+    Parameters
+    ----------
+    image:
+        Source image in BGR format.
+    debug_path:
+        If provided the final binary mask is written here.
+    threshold_path:
+        Optional file path where the raw thresholded image used during
+        segmentation is saved.  This allows inspection of the Otsu threshold
+        result prior to contour filtering.
+    """
+
+    mask = segment_garment(image, thresh_debug_path=threshold_path)
     if debug_path is not None:
         cv2.imwrite(debug_path, mask)
     return mask
@@ -227,14 +255,15 @@ def measure_clothes(
 ) -> Tuple[np.ndarray, Dict[str, float]]:
     """High level convenience wrapper used in the tests."""
 
-    mask_path = contour_path = measure_path = None
+    mask_path = contour_path = measure_path = threshold_path = None
     if debug_dir is not None:
         os.makedirs(debug_dir, exist_ok=True)
         mask_path = os.path.join(debug_dir, "mask.png")
         contour_path = os.path.join(debug_dir, "contour.png")
         measure_path = os.path.join(debug_dir, "measure.png")
+        threshold_path = os.path.join(debug_dir, "threshold.png")
 
-    mask = binary_mask(image, mask_path)
+    mask = binary_mask(image, mask_path, threshold_path)
     contour = largest_contour(mask, contour_path)
     meas_px = measure_garment(mask)
 
