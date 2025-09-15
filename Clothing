@@ -5,12 +5,6 @@ import os
 import numbers
 from measurements import measure_clothes, NoGarmentDetectedError
 from image_utils import load_image
-try:
-    import rembg
-    session = rembg.new_session("u2netp")
-except ImportError:  # pragma: no cover
-    rembg = None
-    session = None
 
 # 黒四角マーカー検出
 def detect_marker(
@@ -211,100 +205,6 @@ def detect_marker(
 
     return (cm_per_pixel, image) if debug else cm_per_pixel
 
-# GrabCut による輪郭スナップ
-def snap_mask_to_edges(bgr, coarse_mask, band_px=8, iters=4):
-    """
-    coarse_mask（0/255）を出発点に、周囲 band_px の帯域だけを未知にして
-    GrabCut を再実行。輪郭を実エッジへ“スナップ”させる。
-    戻り値：0/255 の精密マスク
-    """
-    m = (coarse_mask > 0).astype(np.uint8) * 255
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band_px + 1, 2 * band_px + 1))
-    sure_fg = cv2.erode(m, k, iterations=1)
-    sure_bg = cv2.dilate(m, k, iterations=1)
-    sure_bg = cv2.bitwise_not(sure_bg)
-
-    gc_mask = np.full(m.shape, cv2.GC_PR_BGD, np.uint8)
-    gc_mask[sure_bg > 0] = cv2.GC_BGD
-    gc_mask[sure_fg > 0] = cv2.GC_FGD
-
-    bgdModel = np.zeros((1, 65), np.float64)
-    fgdModel = np.zeros((1, 65), np.float64)
-    cv2.grabCut(bgr, gc_mask, None, bgdModel, fgdModel, iters, cv2.GC_INIT_WITH_MASK)
-
-    out = np.where((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-    return out
-
-# 背景除去
-def remove_background(image, max_size=None):
-    """Remove the background from ``image`` using :mod:`rembg` to obtain a
-    clean mask and return a BGR image with a fully black background.
-
-    The original implementation relied on ``rembg`` directly returning an
-    image with an alpha channel.  Some versions of the library however produce
-    slightly fuzzy masks which results in small leftover blobs around the
-    garment.  The revised function therefore requests the mask from
-    ``rembg`` (``only_mask=True``), performs additional morphological
-    filtering and finally composites the original BGR pixels onto a black
-    canvas via :func:`cv2.copyTo`.
-
-    Parameters
-    ----------
-    image : ndarray
-        BGR image to process.
-    max_size : int, optional
-        If given, the image is scaled so that its longest side equals
-        ``max_size`` pixels before calling :func:`rembg.remove`. The mask is
-        resized back to the original resolution so subsequent measurement code
-        can operate on the original scale.
-    """
-
-    if rembg is None or session is None:
-        raise ImportError("rembg is required for background removal")
-
-    orig_h, orig_w = image.shape[:2]
-
-    scale = 1.0
-    image_resized = image
-    if max_size is not None:
-        longest = max(orig_h, orig_w)
-        if longest > max_size:
-            scale = max_size / float(longest)
-            new_w = int(orig_w * scale)
-            new_h = int(orig_h * scale)
-            image_resized = cv2.resize(
-                image, (new_w, new_h), interpolation=cv2.INTER_AREA
-            )
-
-    # ``rembg`` is invoked twice with ``only_mask=True`` as requested.  The
-    # first call acts as a warm-up and the second provides the mask used for
-    # further processing.
-    rembg.remove(image_resized, session=session, only_mask=True)
-    mask = rembg.remove(image_resized, session=session, only_mask=True)
-    mask = np.array(mask)
-    if mask.ndim == 3:
-        mask = mask[:, :, 0]
-
-    # Binarise and clean up the mask. Close first to fill holes, then open to
-    # remove speckle noise. Finally dilate slightly to compensate shrinkage.
-    _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)
-    ell3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, ell3, iterations=1)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, ell3, iterations=1)
-    mask = cv2.dilate(mask, ell3, iterations=1)
-    mask = snap_mask_to_edges(image_resized, mask)
-
-    if scale != 1.0:
-        mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-        image_resized = cv2.resize(
-            image_resized, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-        )
-
-    # Composite the garment on a black background using the cleaned mask.
-    result = cv2.copyTo(image_resized, mask)
-
-    return result
-
 
 def resize_for_speed(image, cm_per_pixel, max_size=1200):
     """Downscale ``image`` so its longest side is ``max_size`` pixels.
@@ -452,17 +352,11 @@ if __name__ == "__main__":
     # 必要に応じて画像を縮小し、縮尺も調整
     img, cm_per_pixel = resize_for_speed(img, cm_per_pixel)
 
-    # 背景除去
-    img_no_bg = remove_background(img)
-
     # 服計測
     try:
-        contour, measurements = measure_clothes(img_no_bg, cm_per_pixel)
-    except ValueError as e:
+        contour, measurements = measure_clothes(img, cm_per_pixel)
+    except NoGarmentDetectedError as e:
         print(f"計測エラー: {e}")
-        exit()
-    if contour is None:
-        print("服が検出できません。")
         exit()
 
     # 寸法表示
