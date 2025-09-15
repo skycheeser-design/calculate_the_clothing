@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 # Skip this test if required dependencies for importing Clothing are missing
-required_modules = ["numpy", "cv2", "PIL", "pillow_heif", "rembg"]
+required_modules = ["numpy", "cv2", "PIL", "pillow_heif"]
 for mod in required_modules:
     if importlib.util.find_spec(mod) is None:
         pytest.skip(f"{mod} is required for this test", allow_module_level=True)
