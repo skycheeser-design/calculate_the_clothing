@@ -14,7 +14,7 @@
 ## 必要環境 / 依存パッケージ
 - Python 3.10 以上
 - iPhoneなどのスマートフォン（将来的にはAndroidにも対応予定）
-- opencv-python, pillow-heif, rembg, numpy, Pillow
+- opencv-python, pillow-heif, numpy, Pillow
 
 ### 日本語フォントについて
 寸法テキストを日本語で描画するためには日本語に対応したTrueTypeフォントが必要です。
@@ -35,7 +35,7 @@ export JP_FONT_PATH=/path/to/your/NotoSansJP-Regular.otf
    ```
 2. Pythonパッケージをインストールします。
    ```bash
-   pip install opencv-python pillow-heif rembg numpy Pillow
+   pip install opencv-python pillow-heif numpy Pillow
    ```
 
 ## 使い方
