@@ -1,5 +1,8 @@
+import os
 import cv2
 import numpy as np
+
+from image_utils import load_image
 
 
 def generate_mask(
@@ -47,9 +50,14 @@ def generate_mask(
     cnts2, _ = cv2.findContours(th2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     area1 = max((cv2.contourArea(c) for c in cnts1), default=0)
     area2 = max((cv2.contourArea(c) for c in cnts2), default=0)
-    mask = th1 if area1 >= area2 else th2
+    use_inv = area2 > area1
+    mask = th2 if use_inv else th1
     if threshold_output is not None:
-        cv2.imwrite(threshold_output, mask)
+        base, ext = os.path.splitext(threshold_output)
+        if not ext:
+            ext = ".png"
+        suffix = "_otsu_inv" if use_inv else "_otsu"
+        cv2.imwrite(f"{base}{suffix}{ext}", mask)
 
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     out = np.zeros_like(mask)
@@ -94,7 +102,7 @@ def cutout_clothes(
         The generated binary mask.
     """
 
-    image = cv2.imread(input_path, cv2.IMREAD_COLOR)
+    image = load_image(input_path)
     if image is None:
         raise FileNotFoundError(f"Failed to read image: {input_path}")
 
