@@ -12,13 +12,17 @@ def main() -> None:
     parser.add_argument(
         "--output", default="output.png", help="path to save visualised result"
     )
+    parser.add_argument(
+        "--threshold-output",
+        help="optional path to save the raw threshold image used for segmentation",
+    )
     args = parser.parse_args()
 
     img = cv2.imread(args.image)
     if img is None:
         raise SystemExit("Failed to read input image")
 
-    mask = segment_garment(img)
+    mask = segment_garment(img, thresh_debug_path=args.threshold_output)
     meas = measure_garment(mask)
     vis = visualize(img, mask, meas)
     cv2.imwrite(args.output, vis)

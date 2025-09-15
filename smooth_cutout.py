@@ -2,7 +2,11 @@ import cv2
 import numpy as np
 
 
-def generate_mask(image: np.ndarray, debug: bool = False) -> np.ndarray:
+def generate_mask(
+    image: np.ndarray,
+    debug: bool = False,
+    threshold_output: str | None = None,
+) -> np.ndarray:
     """Generate a binary garment mask using basic image processing.
 
     The previous implementation relied on a heavy GrabCut based pipeline which
@@ -19,6 +23,9 @@ def generate_mask(image: np.ndarray, debug: bool = False) -> np.ndarray:
     debug: bool, default False
         When ``True`` an intermediate visualisation is written to
         ``debug_mask.png`` for inspection.
+    threshold_output: str | None, default None
+        Optional file path where the raw threshold image will be saved.  This
+        is the binary image prior to contour extraction.
 
     Returns
     -------
@@ -41,6 +48,8 @@ def generate_mask(image: np.ndarray, debug: bool = False) -> np.ndarray:
     area1 = max((cv2.contourArea(c) for c in cnts1), default=0)
     area2 = max((cv2.contourArea(c) for c in cnts2), default=0)
     mask = th1 if area1 >= area2 else th2
+    if threshold_output is not None:
+        cv2.imwrite(threshold_output, mask)
 
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     out = np.zeros_like(mask)
@@ -59,6 +68,7 @@ def cutout_clothes(
     mask_output: str,
     masked_output: str | None = None,
     contour_output: str | None = None,
+    threshold_output: str | None = None,
 ) -> np.ndarray:
     """Generate and save garment mask and optional visualisations.
 
@@ -74,6 +84,9 @@ def cutout_clothes(
     contour_output:
         Optional path to save a visualisation with the detected garment
         contour drawn on top of the original image.
+    threshold_output:
+        Optional path to save the raw threshold image prior to contour
+        extraction.
 
     Returns
     -------
@@ -85,7 +98,7 @@ def cutout_clothes(
     if image is None:
         raise FileNotFoundError(f"Failed to read image: {input_path}")
 
-    mask = generate_mask(image)
+    mask = generate_mask(image, threshold_output=threshold_output)
     cv2.imwrite(mask_output, mask)
 
     if masked_output is not None:
@@ -118,12 +131,17 @@ def main() -> None:
         "--contour-output",
         help="Optional path to save the image with contours overlaid",
     )
+    parser.add_argument(
+        "--threshold-output",
+        help="Optional path to save the raw threshold image",
+    )
     args = parser.parse_args()
     cutout_clothes(
         args.input,
         args.output,
         masked_output=args.masked_output,
         contour_output=args.contour_output,
+        threshold_output=args.threshold_output,
     )
 
 
