@@ -54,24 +54,77 @@ def generate_mask(image: np.ndarray, debug: bool = False) -> np.ndarray:
     return out
 
 
-def cutout_clothes(input_path: str, output_path: str) -> np.ndarray:
-    """CLI-friendly wrapper that saves the generated mask to ``output_path``."""
+def cutout_clothes(
+    input_path: str,
+    mask_output: str,
+    masked_output: str | None = None,
+    contour_output: str | None = None,
+) -> np.ndarray:
+    """Generate and save garment mask and optional visualisations.
+
+    Parameters
+    ----------
+    input_path:
+        Path to the source image.
+    mask_output:
+        File path where the binary mask will be written.
+    masked_output:
+        Optional path to save the original image with the mask applied.
+        The background is filled with black.
+    contour_output:
+        Optional path to save a visualisation with the detected garment
+        contour drawn on top of the original image.
+
+    Returns
+    -------
+    np.ndarray
+        The generated binary mask.
+    """
+
     image = cv2.imread(input_path, cv2.IMREAD_COLOR)
     if image is None:
         raise FileNotFoundError(f"Failed to read image: {input_path}")
+
     mask = generate_mask(image)
-    cv2.imwrite(output_path, mask)
+    cv2.imwrite(mask_output, mask)
+
+    if masked_output is not None:
+        masked = cv2.bitwise_and(image, image, mask=mask)
+        cv2.imwrite(masked_output, masked)
+
+    if contour_output is not None:
+        contour_img = image.copy()
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            cv2.drawContours(contour_img, contours, -1, (0, 255, 0), 2)
+        cv2.imwrite(contour_output, contour_img)
+
     return mask
 
 
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate garment mask and save as PNG")
+    parser = argparse.ArgumentParser(
+        description="Generate garment mask and optional visualisations"
+    )
     parser.add_argument("input", help="Path to the input image")
     parser.add_argument("output", help="Path to save the mask image")
+    parser.add_argument(
+        "--masked-output",
+        help="Optional path to save the source image with the mask applied",
+    )
+    parser.add_argument(
+        "--contour-output",
+        help="Optional path to save the image with contours overlaid",
+    )
     args = parser.parse_args()
-    cutout_clothes(args.input, args.output)
+    cutout_clothes(
+        args.input,
+        args.output,
+        masked_output=args.masked_output,
+        contour_output=args.contour_output,
+    )
 
 
 if __name__ == "__main__":
